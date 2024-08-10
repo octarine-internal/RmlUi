@@ -4,7 +4,7 @@
  * For the latest information, see http://github.com/mikke89/RmlUi
  *
  * Copyright (c) 2008-2010 CodePoint Ltd, Shift Technology Ltd
- * Copyright (c) 2019-2023 The RmlUi Team, and contributors
+ * Copyright (c) 2019 The RmlUi Team, and contributors
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -48,18 +48,207 @@
 #endif // HAS_X11XKBLIB
 #include <X11/keysym.h>
 
+// - State
+static Rml::Context* context = nullptr;
+static timeval start_time;
+
+// -- Window
+static Display* display = nullptr;
+static Window window = 0;
+static Cursor cursor_default = 0;
+static Cursor cursor_move = 0;
+static Cursor cursor_pointer = 0;
+static Cursor cursor_resize = 0;
+static Cursor cursor_cross = 0;
+static Cursor cursor_text = 0;
+static Cursor cursor_unavailable = 0;
+
+// -- Clipboard
+static Rml::String clipboard_text;
+static Atom XA_atom = 4;
+static Atom XA_STRING_atom = 31;
+static Atom UTF8_atom;
+static Atom CLIPBOARD_atom;
+static Atom XSEL_DATA_atom;
+static Atom TARGETS_atom;
+static Atom TEXT_atom;
+
+// -- Input
+static void InitializeKeymap();
+static void InitializeX11Keymap(Display* display);
+static bool HandleKeyboardEvent(const XEvent& event);
 static Rml::Character GetCharacterCode(Rml::Input::KeyIdentifier key_identifier, int key_modifier_state);
 
-SystemInterface_X11::SystemInterface_X11(Display* display) : display(display)
+static const int KEYMAP_SIZE = 256;
+static Rml::Input::KeyIdentifier key_identifier_map[KEYMAP_SIZE];
+
+#ifdef HAS_X11XKBLIB
+static bool has_xkblib = false;
+#endif // HAS_X11XKBLIB
+
+static int min_keycode, max_keycode, keysyms_per_keycode;
+static KeySym* x11_key_mapping = nullptr;
+
+static void XCopy(const Rml::String& clipboard_data, const XEvent& event)
 {
-	// Create cursors
-	cursor_default = XCreateFontCursor(display, XC_left_ptr);
-	cursor_move = XCreateFontCursor(display, XC_fleur);
-	cursor_pointer = XCreateFontCursor(display, XC_hand1);
-	cursor_resize = XCreateFontCursor(display, XC_sizing);
-	cursor_cross = XCreateFontCursor(display, XC_crosshair);
-	cursor_text = XCreateFontCursor(display, XC_xterm);
-	cursor_unavailable = XCreateFontCursor(display, XC_X_cursor);
+	Atom format;
+	if (UTF8_atom)
+	{
+		format = UTF8_atom;
+	}
+	else
+	{
+		format = XA_STRING_atom;
+	}
+	XSelectionEvent ev = {
+		SelectionNotify, // the event type that will be sent to the requestor
+		0,               // serial
+		0,               // send_event
+		event.xselectionrequest.display, event.xselectionrequest.requestor, event.xselectionrequest.selection, event.xselectionrequest.target,
+		event.xselectionrequest.property,
+		0 // time
+	};
+	int retval = 0;
+	if (ev.target == TARGETS_atom)
+	{
+		retval = XChangeProperty(ev.display, ev.requestor, ev.property, XA_atom, 32, PropModeReplace, (unsigned char*)&format, 1);
+	}
+	else if (ev.target == XA_STRING_atom || ev.target == TEXT_atom)
+	{
+		retval = XChangeProperty(ev.display, ev.requestor, ev.property, XA_STRING_atom, 8, PropModeReplace, (unsigned char*)clipboard_data.c_str(),
+			clipboard_data.size());
+	}
+	else if (ev.target == UTF8_atom)
+	{
+		retval = XChangeProperty(ev.display, ev.requestor, ev.property, UTF8_atom, 8, PropModeReplace, (unsigned char*)clipboard_data.c_str(),
+			clipboard_data.size());
+	}
+	else
+	{
+		ev.property = 0;
+	}
+	if ((retval & 2) == 0)
+	{
+		// Notify the requestor that clipboard data is available
+		XSendEvent(display, ev.requestor, 0, 0, (XEvent*)&ev);
+	}
+}
+
+static bool XPaste(Atom target_atom, Rml::String& clipboard_data)
+{
+	XEvent event;
+
+	// A SelectionRequest event will be sent to the clipboard owner, which should respond with SelectionNotify
+	XConvertSelection(display, CLIPBOARD_atom, target_atom, XSEL_DATA_atom, window, CurrentTime);
+	XSync(display, 0);
+	XNextEvent(display, &event);
+
+	if (event.type == SelectionNotify)
+	{
+		if (event.xselection.property == 0)
+		{
+			// If no owner for the specified selection exists, the X server generates
+			// a SelectionNotify event with property None (0).
+			return false;
+		}
+		if (event.xselection.selection == CLIPBOARD_atom)
+		{
+			int actual_format;
+			unsigned long bytes_after, nitems;
+			char* prop = nullptr;
+			Atom actual_type;
+			XGetWindowProperty(event.xselection.display, event.xselection.requestor, event.xselection.property,
+				0L,    // offset
+				(~0L), // length
+				0,     // delete?
+				AnyPropertyType, &actual_type, &actual_format, &nitems, &bytes_after, (unsigned char**)&prop);
+			if (actual_type == UTF8_atom || actual_type == XA_STRING_atom)
+			{
+				clipboard_data = Rml::String(prop, prop + nitems);
+				XFree(prop);
+			}
+			XDeleteProperty(event.xselection.display, event.xselection.requestor, event.xselection.property);
+			return true;
+		}
+	}
+
+	return false;
+}
+
+bool RmlX11::Initialize(Display* display)
+{
+	RMLUI_ASSERT(display);
+
+	gettimeofday(&start_time, nullptr);
+
+	InitializeKeymap();
+	InitializeX11Keymap(display);
+
+	return true;
+}
+
+void RmlX11::Shutdown() {}
+
+bool RmlX11::OpenWindow(const char* name, int width, int height, bool allow_resize, Display* in_display, XVisualInfo* visual_info, Window* out_window)
+{
+	display = in_display;
+
+	// Build up our window attributes.
+	XSetWindowAttributes window_attributes;
+	window_attributes.colormap = XCreateColormap(display, RootWindow(display, visual_info->screen), visual_info->visual, AllocNone);
+	window_attributes.border_pixel = 0;
+	window_attributes.event_mask = ExposureMask | KeyPressMask | ButtonPressMask | StructureNotifyMask;
+
+	// Create the window.
+	window = XCreateWindow(display, RootWindow(display, visual_info->screen), 0, 0, width, height, 0, visual_info->depth, InputOutput,
+		visual_info->visual, CWBorderPixel | CWColormap | CWEventMask, &window_attributes);
+
+	// Handle delete events in windowed mode.
+	Atom delete_atom = XInternAtom(display, "WM_DELETE_WINDOW", True);
+	XSetWMProtocols(display, window, &delete_atom, 1);
+
+	// Capture the events we're interested in.
+	XSelectInput(display, window, KeyPressMask | KeyReleaseMask | ButtonPressMask | ButtonReleaseMask | PointerMotionMask | StructureNotifyMask);
+
+	if (!allow_resize)
+	{
+		// Force the window to remain at the fixed size by asking the window manager nicely, it may choose to ignore us
+		XSizeHints* win_size_hints = XAllocSizeHints(); // Allocate a size hint structure
+		if (win_size_hints == nullptr)
+		{
+			fprintf(stderr, "XAllocSizeHints - out of memory\n");
+		}
+		else
+		{
+			// Initialize the structure and specify which hints will be providing
+			win_size_hints->flags = PSize | PMinSize | PMaxSize;
+
+			// Set the sizes we want the window manager to use
+			win_size_hints->base_width = width;
+			win_size_hints->base_height = height;
+			win_size_hints->min_width = width;
+			win_size_hints->min_height = height;
+			win_size_hints->max_width = width;
+			win_size_hints->max_height = height;
+
+			// Pass the size hints to the window manager.
+			XSetWMNormalHints(display, window, win_size_hints);
+
+			// Free the size buffer
+			XFree(win_size_hints);
+		}
+	}
+
+	{
+		// Create cursors
+		cursor_default = XCreateFontCursor(display, XC_left_ptr);
+		cursor_move = XCreateFontCursor(display, XC_fleur);
+		cursor_pointer = XCreateFontCursor(display, XC_hand1);
+		cursor_resize = XCreateFontCursor(display, XC_sizing);
+		cursor_cross = XCreateFontCursor(display, XC_crosshair);
+		cursor_text = XCreateFontCursor(display, XC_xterm);
+		cursor_unavailable = XCreateFontCursor(display, XC_X_cursor);
+	}
 
 	// For copy & paste functions
 	UTF8_atom = XInternAtom(display, "UTF8_STRING", 1);
@@ -68,24 +257,68 @@ SystemInterface_X11::SystemInterface_X11(Display* display) : display(display)
 	TARGETS_atom = XInternAtom(display, "TARGETS", 0);
 	TEXT_atom = XInternAtom(display, "TEXT", 0);
 
-	gettimeofday(&start_time, nullptr);
-}
+	// Set the window title and show the window.
+	XSetStandardProperties(display, window, name, "", 0L, nullptr, 0, nullptr);
+	XMapRaised(display, window);
 
-void SystemInterface_X11::SetWindow(Window in_window)
-{
-	window = in_window;
-}
+	*out_window = window;
 
-bool SystemInterface_X11::HandleSelectionRequest(const XEvent& ev)
-{
-	if (ev.type == SelectionRequest && XGetSelectionOwner(display, CLIPBOARD_atom) == window && ev.xselectionrequest.selection == CLIPBOARD_atom)
-	{
-		XCopy(clipboard_text, ev);
-		return false;
-	}
 	return true;
 }
 
+void RmlX11::CloseWindow()
+{
+	if (display)
+	{
+		XCloseDisplay(display);
+		display = nullptr;
+	}
+}
+
+bool RmlX11::HandleWindowEvent(const XEvent& event)
+{
+	switch (event.type)
+	{
+	case SelectionRequest:
+	{
+		if (XGetSelectionOwner(display, CLIPBOARD_atom) == window && event.xselectionrequest.selection == CLIPBOARD_atom)
+		{
+			XCopy(clipboard_text, event);
+			return false;
+		}
+	}
+	break;
+	default:
+	{
+		return HandleKeyboardEvent(event);
+	}
+	break;
+	}
+
+	return true;
+}
+
+void RmlX11::DisplayError(const char* fmt, ...)
+{
+	const int buffer_size = 1024;
+	char buffer[buffer_size];
+	va_list argument_list;
+
+	// Print the message to the buffer.
+	va_start(argument_list, fmt);
+	int len = vsnprintf(buffer, buffer_size - 2, fmt, argument_list);
+	if (len < 0 || len > buffer_size - 2)
+	{
+		len = buffer_size - 2;
+	}
+	buffer[len] = '\n';
+	buffer[len + 1] = '\0';
+	va_end(argument_list);
+
+	printf("%s", buffer);
+}
+
+// Returns the seconds that have elapsed since program startup.
 double SystemInterface_X11::GetElapsedTime()
 {
 	struct timeval now;
@@ -116,12 +349,6 @@ void SystemInterface_X11::SetMouseCursor(const Rml::String& cursor_name)
 			cursor_handle = cursor_cross;
 		else if (cursor_name == "text")
 			cursor_handle = cursor_text;
-		else if (cursor_name == "rmlui-scroll-idle")
-			cursor_handle = cursor_move;
-		else if (cursor_name == "rmlui-scroll-up")
-			cursor_handle = cursor_move;
-		else if (cursor_name == "rmlui-scroll-down")
-			cursor_handle = cursor_move;
 		else if (cursor_name == "unavailable")
 			cursor_handle = cursor_unavailable;
 
@@ -154,131 +381,103 @@ void SystemInterface_X11::GetClipboardText(Rml::String& text)
 	}
 }
 
-void SystemInterface_X11::XCopy(const Rml::String& clipboard_data, const XEvent& event)
+void RmlX11::SetContextForInput(Rml::Context* new_context)
 {
-	Atom format = (UTF8_atom ? UTF8_atom : XA_STRING_atom);
+	context = new_context;
+}
 
-	XSelectionEvent ev = {
-		SelectionNotify, // the event type that will be sent to the requestor
-		0,               // serial
-		0,               // send_event
-		event.xselectionrequest.display, event.xselectionrequest.requestor, event.xselectionrequest.selection, event.xselectionrequest.target,
-		event.xselectionrequest.property,
-		0 // time
-	};
+static void InitializeX11Keymap(Display* display)
+{
+	RMLUI_ASSERT(display != nullptr);
 
-	int retval = 0;
-	if (ev.target == TARGETS_atom)
-	{
-		retval = XChangeProperty(ev.display, ev.requestor, ev.property, XA_atom, 32, PropModeReplace, (unsigned char*)&format, 1);
-	}
-	else if (ev.target == XA_STRING_atom || ev.target == TEXT_atom)
-	{
-		retval = XChangeProperty(ev.display, ev.requestor, ev.property, XA_STRING_atom, 8, PropModeReplace, (unsigned char*)clipboard_data.c_str(),
-			clipboard_data.size());
-	}
-	else if (ev.target == UTF8_atom)
-	{
-		retval = XChangeProperty(ev.display, ev.requestor, ev.property, UTF8_atom, 8, PropModeReplace, (unsigned char*)clipboard_data.c_str(),
-			clipboard_data.size());
-	}
-	else
-	{
-		ev.property = 0;
-	}
+#ifdef HAS_X11XKBLIB
+	int opcode_rtrn = -1;
+	int event_rtrn = -1;
+	int error_rtrn = -1;
+	int major_in_out = -1;
+	int minor_in_out = -1;
 
-	if ((retval & 2) == 0)
+	// Xkb extension may not exist in the server.  This checks for its
+	// existence and initializes the extension if available.
+	has_xkblib = XkbQueryExtension(display, &opcode_rtrn, &event_rtrn, &error_rtrn, &major_in_out, &minor_in_out);
+
+	// if Xkb isn't available, fall back to using XGetKeyboardMapping,
+	// which may occur if RmlUi is compiled with Xkb support but the
+	// server doesn't support it.  This occurs with older X11 servers or
+	// virtual framebuffers such as x11vnc server.
+	if (!has_xkblib)
+#endif // HAS_X11XKBLIB
 	{
-		// Notify the requestor that clipboard data is available
-		XSendEvent(display, ev.requestor, 0, 0, (XEvent*)&ev);
+		XDisplayKeycodes(display, &min_keycode, &max_keycode);
+
+		RMLUI_ASSERT(x11_key_mapping != nullptr);
+		x11_key_mapping = XGetKeyboardMapping(display, min_keycode, max_keycode + 1 - min_keycode, &keysyms_per_keycode);
 	}
 }
 
-bool SystemInterface_X11::XPaste(Atom target_atom, Rml::String& clipboard_data)
+static bool HandleKeyboardEvent(const XEvent& event)
 {
-	XEvent ev;
-
-	// A SelectionRequest event will be sent to the clipboard owner, which should respond with SelectionNotify
-	XConvertSelection(display, CLIPBOARD_atom, target_atom, XSEL_DATA_atom, window, CurrentTime);
-	XSync(display, 0);
-	XNextEvent(display, &ev);
-
-	if (ev.type == SelectionNotify)
-	{
-		if (ev.xselection.property == 0)
-		{
-			// If no owner for the specified selection exists, the X server generates
-			// a SelectionNotify event with property None (0).
-			return false;
-		}
-		if (ev.xselection.selection == CLIPBOARD_atom)
-		{
-			int actual_format;
-			unsigned long bytes_after, nitems;
-			char* prop = nullptr;
-			Atom actual_type;
-			XGetWindowProperty(ev.xselection.display, ev.xselection.requestor, ev.xselection.property,
-				0L,    // offset
-				(~0L), // length
-				0,     // delete?
-				AnyPropertyType, &actual_type, &actual_format, &nitems, &bytes_after, (unsigned char**)&prop);
-
-			if (actual_type == UTF8_atom || actual_type == XA_STRING_atom)
-			{
-				clipboard_data = Rml::String(prop, prop + nitems);
-				XFree(prop);
-			}
-
-			XDeleteProperty(ev.xselection.display, ev.xselection.requestor, ev.xselection.property);
-			return true;
-		}
-	}
-
-	return false;
-}
-
-bool RmlX11::HandleInputEvent(Rml::Context* context, Display* display, const XEvent& ev)
-{
-	switch (ev.type)
+	// Process all mouse and keyboard events
+	switch (event.type)
 	{
 	case ButtonPress:
 	{
-		switch (ev.xbutton.button)
+		int button_index;
+
+		switch (event.xbutton.button)
 		{
 		case Button1:
+			button_index = 0;
+			break;
 		case Button2:
-		case Button3: return context->ProcessMouseButtonDown(ConvertMouseButton(ev.xbutton.button), RmlX11::GetKeyModifierState(ev.xbutton.state));
-		case Button4: return context->ProcessMouseWheel(-1, RmlX11::GetKeyModifierState(ev.xbutton.state));
-		case Button5: return context->ProcessMouseWheel(1, RmlX11::GetKeyModifierState(ev.xbutton.state));
-		default: return true;
+			button_index = 2;
+			break;
+		case Button3:
+			button_index = 1;
+			break;
+		case Button4:
+			return context->ProcessMouseWheel(-1, RmlX11::GetKeyModifierState(event.xbutton.state));
+		case Button5:
+			return context->ProcessMouseWheel(1, RmlX11::GetKeyModifierState(event.xbutton.state));
+		default:
+			return true;
 		}
+
+		return context->ProcessMouseButtonDown(button_index, RmlX11::GetKeyModifierState(event.xbutton.state));
 	}
 	break;
+
 	case ButtonRelease:
 	{
-		switch (ev.xbutton.button)
+		int button_index;
+
+		switch (event.xbutton.button)
 		{
 		case Button1:
+			button_index = 0;
+			break;
 		case Button2:
-		case Button3: return context->ProcessMouseButtonUp(ConvertMouseButton(ev.xbutton.button), RmlX11::GetKeyModifierState(ev.xbutton.state));
-		default: return true;
+			button_index = 2;
+			break;
+		case Button3:
+			button_index = 1;
+			break;
+		default:
+			return true;
 		}
+
+		return context->ProcessMouseButtonUp(button_index, RmlX11::GetKeyModifierState(event.xbutton.state));
 	}
 	break;
+
 	case MotionNotify:
-	{
-		return context->ProcessMouseMove(ev.xmotion.x, ev.xmotion.y, RmlX11::GetKeyModifierState(ev.xmotion.state));
-	}
-	break;
-	case LeaveNotify:
-	{
-		return context->ProcessMouseLeave();
-	}
-	break;
+		return context->ProcessMouseMove(event.xmotion.x, event.xmotion.y, RmlX11::GetKeyModifierState(event.xmotion.state));
+		break;
+
 	case KeyPress:
 	{
-		Rml::Input::KeyIdentifier key_identifier = RmlX11::ConvertKey(display, ev.xkey.keycode);
-		const int key_modifier_state = RmlX11::GetKeyModifierState(ev.xkey.state);
+		Rml::Input::KeyIdentifier key_identifier = RmlX11::ConvertKey(event.xkey.keycode);
+		const int key_modifier_state = RmlX11::GetKeyModifierState(event.xkey.state);
 
 		bool propagates = true;
 
@@ -292,10 +491,11 @@ bool RmlX11::HandleInputEvent(Rml::Context* context, Display* display, const XEv
 		return propagates;
 	}
 	break;
+
 	case KeyRelease:
 	{
-		Rml::Input::KeyIdentifier key_identifier = RmlX11::ConvertKey(display, ev.xkey.keycode);
-		const int key_modifier_state = RmlX11::GetKeyModifierState(ev.xkey.state);
+		Rml::Input::KeyIdentifier key_identifier = RmlX11::ConvertKey(event.xkey.keycode);
+		const int key_modifier_state = RmlX11::GetKeyModifierState(event.xkey.state);
 
 		bool propagates = true;
 
@@ -305,273 +505,213 @@ bool RmlX11::HandleInputEvent(Rml::Context* context, Display* display, const XEv
 		return propagates;
 	}
 	break;
-	default: break;
 	}
 
 	return true;
 }
 
-int RmlX11::GetKeyModifierState(int x11_state)
+Rml::Input::KeyIdentifier RmlX11::ConvertKey(unsigned int x11_key_code)
+{
+	const int group_index = 0; // this is always 0 for our limited example
+	Rml::Input::KeyIdentifier key_identifier = Rml::Input::KI_UNKNOWN;
+
+#ifdef HAS_X11XKBLIB
+	if (has_xkblib)
+	{
+		KeySym sym = XkbKeycodeToKeysym(display, x11_key_code, 0, group_index);
+
+		key_identifier = key_identifier_map[sym & 0xFF];
+	}
+	else
+#endif // HAS_X11XKBLIB
+	{
+		KeySym sym = x11_key_mapping[(x11_key_code - min_keycode) * keysyms_per_keycode + group_index];
+
+		KeySym lower_sym, upper_sym;
+		XConvertCase(sym, &lower_sym, &upper_sym);
+
+		key_identifier = key_identifier_map[lower_sym & 0xFF];
+	}
+
+	return key_identifier;
+}
+
+int RmlX11::GetKeyModifierState(int x_state)
 {
 	int key_modifier_state = 0;
 
-	if (x11_state & ShiftMask)
+	if (x_state & ShiftMask)
 		key_modifier_state |= Rml::Input::KM_SHIFT;
 
-	if (x11_state & LockMask)
+	if (x_state & LockMask)
 		key_modifier_state |= Rml::Input::KM_CAPSLOCK;
 
-	if (x11_state & ControlMask)
+	if (x_state & ControlMask)
 		key_modifier_state |= Rml::Input::KM_CTRL;
 
-	if (x11_state & Mod5Mask)
+	if (x_state & Mod5Mask)
 		key_modifier_state |= Rml::Input::KM_ALT;
 
-	if (x11_state & Mod2Mask)
+	if (x_state & Mod2Mask)
 		key_modifier_state |= Rml::Input::KM_NUMLOCK;
 
 	return key_modifier_state;
 }
 
-/**
-    X11 Key data used for key code conversion.
- */
-struct XKeyData {
-#ifdef HAS_X11XKBLIB
-	bool has_xkblib = false;
-#endif // HAS_X11XKBLIB
-
-	bool initialized = false;
-	int min_keycode = 0, max_keycode = 0, keysyms_per_keycode = 0;
-	KeySym* x11_key_mapping = nullptr;
-};
-
-// Get the key data, which is initialized and filled on the first fetch.
-static const XKeyData& GetXKeyData(Display* display)
+static void InitializeKeymap()
 {
-	RMLUI_ASSERT(display);
-	static XKeyData data;
+	// Initialise the key map with default values.
+	memset(key_identifier_map, 0, sizeof(key_identifier_map));
 
-	if (!data.initialized)
-	{
-		data.initialized = true;
+	key_identifier_map[XK_BackSpace & 0xFF] = Rml::Input::KI_BACK;
+	key_identifier_map[XK_Tab & 0xFF] = Rml::Input::KI_TAB;
+	key_identifier_map[XK_Clear & 0xFF] = Rml::Input::KI_CLEAR;
+	key_identifier_map[XK_Return & 0xFF] = Rml::Input::KI_RETURN;
+	key_identifier_map[XK_Pause & 0xFF] = Rml::Input::KI_PAUSE;
+	key_identifier_map[XK_Scroll_Lock & 0xFF] = Rml::Input::KI_SCROLL;
+	key_identifier_map[XK_Escape & 0xFF] = Rml::Input::KI_ESCAPE;
+	key_identifier_map[XK_Delete & 0xFF] = Rml::Input::KI_DELETE;
 
-#ifdef HAS_X11XKBLIB
-		int opcode_rtrn = -1;
-		int event_rtrn = -1;
-		int error_rtrn = -1;
-		int major_in_out = -1;
-		int minor_in_out = -1;
+	key_identifier_map[XK_Kanji & 0xFF] = Rml::Input::KI_KANJI;
+	//	key_identifier_map[XK_Muhenkan & 0xFF] = Rml::Input::; /* Cancel Conversion */
+	//	key_identifier_map[XK_Henkan_Mode & 0xFF] = Rml::Input::; /* Start/Stop Conversion */
+	//	key_identifier_map[XK_Henkan & 0xFF] = Rml::Input::; /* Alias for Henkan_Mode */
+	//	key_identifier_map[XK_Romaji & 0xFF] = Rml::Input::; /* to Romaji */
+	//	key_identifier_map[XK_Hiragana & 0xFF] = Rml::Input::; /* to Hiragana */
+	//	key_identifier_map[XK_Katakana & 0xFF] = Rml::Input::; /* to Katakana */
+	//	key_identifier_map[XK_Hiragana_Katakana & 0xFF] = Rml::Input::; /* Hiragana/Katakana toggle */
+	//	key_identifier_map[XK_Zenkaku & 0xFF] = Rml::Input::; /* to Zenkaku */
+	//	key_identifier_map[XK_Hankaku & 0xFF] = Rml::Input::; /* to Hankaku */
+	//	key_identifier_map[XK_Zenkaku_Hankaku & 0xFF] = Rml::Input::; /* Zenkaku/Hankaku toggle */
+	key_identifier_map[XK_Touroku & 0xFF] = Rml::Input::KI_OEM_FJ_TOUROKU;
+	key_identifier_map[XK_Massyo & 0xFF] = Rml::Input::KI_OEM_FJ_MASSHOU;
+	//	key_identifier_map[XK_Kana_Lock & 0xFF] = Rml::Input::; /* Kana Lock */
+	//	key_identifier_map[XK_Kana_Shift & 0xFF] = Rml::Input::; /* Kana Shift */
+	//	key_identifier_map[XK_Eisu_Shift & 0xFF] = Rml::Input::; /* Alphanumeric Shift */
+	//	key_identifier_map[XK_Eisu_toggle & 0xFF] = Rml::Input::; /* Alphanumeric toggle */
 
-		// Xkb extension may not exist in the server. This checks for its existence and initializes the extension if available.
-		data.has_xkblib = XkbQueryExtension(display, &opcode_rtrn, &event_rtrn, &error_rtrn, &major_in_out, &minor_in_out);
+	key_identifier_map[XK_Home & 0xFF] = Rml::Input::KI_HOME;
+	key_identifier_map[XK_Left & 0xFF] = Rml::Input::KI_LEFT;
+	key_identifier_map[XK_Up & 0xFF] = Rml::Input::KI_UP;
+	key_identifier_map[XK_Right & 0xFF] = Rml::Input::KI_RIGHT;
+	key_identifier_map[XK_Down & 0xFF] = Rml::Input::KI_DOWN;
+	key_identifier_map[XK_Prior & 0xFF] = Rml::Input::KI_PRIOR;
+	key_identifier_map[XK_Next & 0xFF] = Rml::Input::KI_NEXT;
+	key_identifier_map[XK_End & 0xFF] = Rml::Input::KI_END;
+	key_identifier_map[XK_Begin & 0xFF] = Rml::Input::KI_HOME;
 
-		// if Xkb isn't available, fall back to using XGetKeyboardMapping, which may occur if RmlUi is compiled with Xkb support but the server
-		// doesn't support it. This occurs with older X11 servers or virtual framebuffers such as x11vnc server.
-		if (!data.has_xkblib)
-#endif // HAS_X11XKBLIB
-		{
-			XDisplayKeycodes(display, &data.min_keycode, &data.max_keycode);
+	key_identifier_map[XK_Print & 0xFF] = Rml::Input::KI_SNAPSHOT;
+	key_identifier_map[XK_Insert & 0xFF] = Rml::Input::KI_INSERT;
+	key_identifier_map[XK_Num_Lock & 0xFF] = Rml::Input::KI_NUMLOCK;
 
-			data.x11_key_mapping = XGetKeyboardMapping(display, data.min_keycode, data.max_keycode + 1 - data.min_keycode, &data.keysyms_per_keycode);
-		}
-	}
+	key_identifier_map[XK_KP_Space & 0xFF] = Rml::Input::KI_SPACE;
+	key_identifier_map[XK_KP_Tab & 0xFF] = Rml::Input::KI_TAB;
+	key_identifier_map[XK_KP_Enter & 0xFF] = Rml::Input::KI_NUMPADENTER;
+	key_identifier_map[XK_KP_F1 & 0xFF] = Rml::Input::KI_F1;
+	key_identifier_map[XK_KP_F2 & 0xFF] = Rml::Input::KI_F2;
+	key_identifier_map[XK_KP_F3 & 0xFF] = Rml::Input::KI_F3;
+	key_identifier_map[XK_KP_F4 & 0xFF] = Rml::Input::KI_F4;
+	key_identifier_map[XK_KP_Home & 0xFF] = Rml::Input::KI_NUMPAD7;
+	key_identifier_map[XK_KP_Left & 0xFF] = Rml::Input::KI_NUMPAD4;
+	key_identifier_map[XK_KP_Up & 0xFF] = Rml::Input::KI_NUMPAD8;
+	key_identifier_map[XK_KP_Right & 0xFF] = Rml::Input::KI_NUMPAD6;
+	key_identifier_map[XK_KP_Down & 0xFF] = Rml::Input::KI_NUMPAD2;
+	key_identifier_map[XK_KP_Prior & 0xFF] = Rml::Input::KI_NUMPAD9;
+	key_identifier_map[XK_KP_Next & 0xFF] = Rml::Input::KI_NUMPAD3;
+	key_identifier_map[XK_KP_End & 0xFF] = Rml::Input::KI_NUMPAD1;
+	key_identifier_map[XK_KP_Begin & 0xFF] = Rml::Input::KI_NUMPAD5;
+	key_identifier_map[XK_KP_Insert & 0xFF] = Rml::Input::KI_NUMPAD0;
+	key_identifier_map[XK_KP_Delete & 0xFF] = Rml::Input::KI_DECIMAL;
+	key_identifier_map[XK_KP_Equal & 0xFF] = Rml::Input::KI_OEM_NEC_EQUAL;
+	key_identifier_map[XK_KP_Multiply & 0xFF] = Rml::Input::KI_MULTIPLY;
+	key_identifier_map[XK_KP_Add & 0xFF] = Rml::Input::KI_ADD;
+	key_identifier_map[XK_KP_Separator & 0xFF] = Rml::Input::KI_SEPARATOR;
+	key_identifier_map[XK_KP_Subtract & 0xFF] = Rml::Input::KI_SUBTRACT;
+	key_identifier_map[XK_KP_Decimal & 0xFF] = Rml::Input::KI_DECIMAL;
+	key_identifier_map[XK_KP_Divide & 0xFF] = Rml::Input::KI_DIVIDE;
 
-	return data;
-}
+	key_identifier_map[XK_F1 & 0xFF] = Rml::Input::KI_F1;
+	key_identifier_map[XK_F2 & 0xFF] = Rml::Input::KI_F2;
+	key_identifier_map[XK_F3 & 0xFF] = Rml::Input::KI_F3;
+	key_identifier_map[XK_F4 & 0xFF] = Rml::Input::KI_F4;
+	key_identifier_map[XK_F5 & 0xFF] = Rml::Input::KI_F5;
+	key_identifier_map[XK_F6 & 0xFF] = Rml::Input::KI_F6;
+	key_identifier_map[XK_F7 & 0xFF] = Rml::Input::KI_F7;
+	key_identifier_map[XK_F8 & 0xFF] = Rml::Input::KI_F8;
+	key_identifier_map[XK_F9 & 0xFF] = Rml::Input::KI_F9;
+	key_identifier_map[XK_F10 & 0xFF] = Rml::Input::KI_F10;
+	key_identifier_map[XK_F11 & 0xFF] = Rml::Input::KI_F11;
+	key_identifier_map[XK_F12 & 0xFF] = Rml::Input::KI_F12;
+	key_identifier_map[XK_F13 & 0xFF] = Rml::Input::KI_F13;
+	key_identifier_map[XK_F14 & 0xFF] = Rml::Input::KI_F14;
+	key_identifier_map[XK_F15 & 0xFF] = Rml::Input::KI_F15;
+	key_identifier_map[XK_F16 & 0xFF] = Rml::Input::KI_F16;
+	key_identifier_map[XK_F17 & 0xFF] = Rml::Input::KI_F17;
+	key_identifier_map[XK_F18 & 0xFF] = Rml::Input::KI_F18;
+	key_identifier_map[XK_F19 & 0xFF] = Rml::Input::KI_F19;
+	key_identifier_map[XK_F20 & 0xFF] = Rml::Input::KI_F20;
+	key_identifier_map[XK_F21 & 0xFF] = Rml::Input::KI_F21;
+	key_identifier_map[XK_F22 & 0xFF] = Rml::Input::KI_F22;
+	key_identifier_map[XK_F23 & 0xFF] = Rml::Input::KI_F23;
+	key_identifier_map[XK_F24 & 0xFF] = Rml::Input::KI_F24;
 
-Rml::Input::KeyIdentifier RmlX11::ConvertKey(Display* display, unsigned int x11_key_code)
-{
-	RMLUI_ASSERT(display);
-	const XKeyData& key_data = GetXKeyData(display);
+	key_identifier_map[XK_Shift_L & 0xFF] = Rml::Input::KI_LSHIFT;
+	key_identifier_map[XK_Shift_R & 0xFF] = Rml::Input::KI_RSHIFT;
+	key_identifier_map[XK_Control_L & 0xFF] = Rml::Input::KI_LCONTROL;
+	key_identifier_map[XK_Control_R & 0xFF] = Rml::Input::KI_RCONTROL;
+	key_identifier_map[XK_Caps_Lock & 0xFF] = Rml::Input::KI_CAPITAL;
 
-	const int group_index = 0; // this is always 0 for our limited example
-	KeySym sym = {};
+	key_identifier_map[XK_Alt_L & 0xFF] = Rml::Input::KI_LMENU;
+	key_identifier_map[XK_Alt_R & 0xFF] = Rml::Input::KI_RMENU;
 
-#ifdef HAS_X11XKBLIB
-	if (key_data.has_xkblib)
-	{
-		sym = XkbKeycodeToKeysym(display, x11_key_code, 0, group_index);
-	}
-	else
-#endif // HAS_X11XKBLIB
-	{
-		KeySym sym_full = key_data.x11_key_mapping[(x11_key_code - key_data.min_keycode) * key_data.keysyms_per_keycode + group_index];
-
-		KeySym lower_sym, upper_sym;
-		XConvertCase(sym_full, &lower_sym, &upper_sym);
-		sym = lower_sym;
-	}
-
-	// clang-format off
-	switch (sym & 0xFF)
-	{
-	case XK_BackSpace & 0xFF:             return Rml::Input::KI_BACK;
-	case XK_Tab & 0xFF:                   return Rml::Input::KI_TAB;
-	case XK_Clear & 0xFF:                 return Rml::Input::KI_CLEAR;
-	case XK_Return & 0xFF:                return Rml::Input::KI_RETURN;
-	case XK_Pause & 0xFF:                 return Rml::Input::KI_PAUSE;
-	case XK_Scroll_Lock & 0xFF:           return Rml::Input::KI_SCROLL;
-	case XK_Escape & 0xFF:                return Rml::Input::KI_ESCAPE;
-	case XK_Delete & 0xFF:                return Rml::Input::KI_DELETE;
-
-	case XK_Kanji & 0xFF:                 return Rml::Input::KI_KANJI;
-	//	case XK_Muhenkan & 0xFF:          return Rml::Input::; /* Cancel Conversion */
-	//	case XK_Henkan_Mode & 0xFF:       return Rml::Input::; /* Start/Stop Conversion */
-	//	case XK_Henkan & 0xFF:            return Rml::Input::; /* Alias for Henkan_Mode */
-	//	case XK_Romaji & 0xFF:            return Rml::Input::; /* to Romaji */
-	//	case XK_Hiragana & 0xFF:          return Rml::Input::; /* to Hiragana */
-	//	case XK_Katakana & 0xFF:          return Rml::Input::; /* to Katakana */
-	//	case XK_Hiragana_Katakana & 0xFF: return Rml::Input::; /* Hiragana/Katakana toggle */
-	//	case XK_Zenkaku & 0xFF:           return Rml::Input::; /* to Zenkaku */
-	//	case XK_Hankaku & 0xFF:           return Rml::Input::; /* to Hankaku */
-	//	case XK_Zenkaku_Hankaku & 0xFF:   return Rml::Input::; /* Zenkaku/Hankaku toggle */
-	case XK_Touroku & 0xFF:               return Rml::Input::KI_OEM_FJ_TOUROKU;
-	//  case XK_Massyo & 0xFF:            return Rml::Input::KI_OEM_FJ_MASSHOU;
-	//	case XK_Kana_Lock & 0xFF:         return Rml::Input::; /* Kana Lock */
-	//	case XK_Kana_Shift & 0xFF:        return Rml::Input::; /* Kana Shift */
-	//	case XK_Eisu_Shift & 0xFF:        return Rml::Input::; /* Alphanumeric Shift */
-	//	case XK_Eisu_toggle & 0xFF:       return Rml::Input::; /* Alphanumeric toggle */
-
-	case XK_Home & 0xFF:                  return Rml::Input::KI_HOME;
-	case XK_Left & 0xFF:                  return Rml::Input::KI_LEFT;
-	case XK_Up & 0xFF:                    return Rml::Input::KI_UP;
-	case XK_Right & 0xFF:                 return Rml::Input::KI_RIGHT;
-	case XK_Down & 0xFF:                  return Rml::Input::KI_DOWN;
-	case XK_Prior & 0xFF:                 return Rml::Input::KI_PRIOR;
-	case XK_Next & 0xFF:                  return Rml::Input::KI_NEXT;
-	case XK_End & 0xFF:                   return Rml::Input::KI_END;
-	case XK_Begin & 0xFF:                 return Rml::Input::KI_HOME;
-
-	// case XK_Print & 0xFF:              return Rml::Input::KI_SNAPSHOT;
-	// case XK_Insert & 0xFF:             return Rml::Input::KI_INSERT;
-	case XK_Num_Lock & 0xFF:              return Rml::Input::KI_NUMLOCK;
-
-	case XK_KP_Space & 0xFF:              return Rml::Input::KI_SPACE;
-	case XK_KP_Tab & 0xFF:                return Rml::Input::KI_TAB;
-	case XK_KP_Enter & 0xFF:              return Rml::Input::KI_NUMPADENTER;
-	case XK_KP_F1 & 0xFF:                 return Rml::Input::KI_F1;
-	case XK_KP_F2 & 0xFF:                 return Rml::Input::KI_F2;
-	case XK_KP_F3 & 0xFF:                 return Rml::Input::KI_F3;
-	case XK_KP_F4 & 0xFF:                 return Rml::Input::KI_F4;
-	case XK_KP_Home & 0xFF:               return Rml::Input::KI_NUMPAD7;
-	case XK_KP_Left & 0xFF:               return Rml::Input::KI_NUMPAD4;
-	case XK_KP_Up & 0xFF:                 return Rml::Input::KI_NUMPAD8;
-	case XK_KP_Right & 0xFF:              return Rml::Input::KI_NUMPAD6;
-	case XK_KP_Down & 0xFF:               return Rml::Input::KI_NUMPAD2;
-	case XK_KP_Prior & 0xFF:              return Rml::Input::KI_NUMPAD9;
-	case XK_KP_Next & 0xFF:               return Rml::Input::KI_NUMPAD3;
-	case XK_KP_End & 0xFF:                return Rml::Input::KI_NUMPAD1;
-	case XK_KP_Begin & 0xFF:              return Rml::Input::KI_NUMPAD5;
-	case XK_KP_Insert & 0xFF:             return Rml::Input::KI_NUMPAD0;
-	case XK_KP_Delete & 0xFF:             return Rml::Input::KI_DECIMAL;
-	case XK_KP_Equal & 0xFF:              return Rml::Input::KI_OEM_NEC_EQUAL;
-	case XK_KP_Multiply & 0xFF:           return Rml::Input::KI_MULTIPLY;
-	case XK_KP_Add & 0xFF:                return Rml::Input::KI_ADD;
-	case XK_KP_Separator & 0xFF:          return Rml::Input::KI_SEPARATOR;
-	case XK_KP_Subtract & 0xFF:           return Rml::Input::KI_SUBTRACT;
-	case XK_KP_Decimal & 0xFF:            return Rml::Input::KI_DECIMAL;
-	case XK_KP_Divide & 0xFF:             return Rml::Input::KI_DIVIDE;
-
-	case XK_F1 & 0xFF:                    return Rml::Input::KI_F1;
-	case XK_F2 & 0xFF:                    return Rml::Input::KI_F2;
-	case XK_F3 & 0xFF:                    return Rml::Input::KI_F3;
-	case XK_F4 & 0xFF:                    return Rml::Input::KI_F4;
-	case XK_F5 & 0xFF:                    return Rml::Input::KI_F5;
-	case XK_F6 & 0xFF:                    return Rml::Input::KI_F6;
-	case XK_F7 & 0xFF:                    return Rml::Input::KI_F7;
-	case XK_F8 & 0xFF:                    return Rml::Input::KI_F8;
-	case XK_F9 & 0xFF:                    return Rml::Input::KI_F9;
-	case XK_F10 & 0xFF:                   return Rml::Input::KI_F10;
-	case XK_F11 & 0xFF:                   return Rml::Input::KI_F11;
-	case XK_F12 & 0xFF:                   return Rml::Input::KI_F12;
-	case XK_F13 & 0xFF:                   return Rml::Input::KI_F13;
-	case XK_F14 & 0xFF:                   return Rml::Input::KI_F14;
-	case XK_F15 & 0xFF:                   return Rml::Input::KI_F15;
-	case XK_F16 & 0xFF:                   return Rml::Input::KI_F16;
-	case XK_F17 & 0xFF:                   return Rml::Input::KI_F17;
-	case XK_F18 & 0xFF:                   return Rml::Input::KI_F18;
-	case XK_F19 & 0xFF:                   return Rml::Input::KI_F19;
-	case XK_F20 & 0xFF:                   return Rml::Input::KI_F20;
-	case XK_F21 & 0xFF:                   return Rml::Input::KI_F21;
-	case XK_F22 & 0xFF:                   return Rml::Input::KI_F22;
-	case XK_F23 & 0xFF:                   return Rml::Input::KI_F23;
-	case XK_F24 & 0xFF:                   return Rml::Input::KI_F24;
-
-	case XK_Shift_L & 0xFF:               return Rml::Input::KI_LSHIFT;
-	case XK_Shift_R & 0xFF:               return Rml::Input::KI_RSHIFT;
-	case XK_Control_L & 0xFF:             return Rml::Input::KI_LCONTROL;
-	case XK_Control_R & 0xFF:             return Rml::Input::KI_RCONTROL;
-	case XK_Caps_Lock & 0xFF:             return Rml::Input::KI_CAPITAL;
-
-	case XK_Alt_L & 0xFF:                 return Rml::Input::KI_LMENU;
-	case XK_Alt_R & 0xFF:                 return Rml::Input::KI_RMENU;
-
-	case XK_space & 0xFF:                 return Rml::Input::KI_SPACE;
-	case XK_apostrophe & 0xFF:            return Rml::Input::KI_OEM_7;
-	case XK_comma & 0xFF:                 return Rml::Input::KI_OEM_COMMA;
-	case XK_minus & 0xFF:                 return Rml::Input::KI_OEM_MINUS;
-	case XK_period & 0xFF:                return Rml::Input::KI_OEM_PERIOD;
-	case XK_slash & 0xFF:                 return Rml::Input::KI_OEM_2;
-	case XK_0 & 0xFF:                     return Rml::Input::KI_0;
-	case XK_1 & 0xFF:                     return Rml::Input::KI_1;
-	case XK_2 & 0xFF:                     return Rml::Input::KI_2;
-	case XK_3 & 0xFF:                     return Rml::Input::KI_3;
-	case XK_4 & 0xFF:                     return Rml::Input::KI_4;
-	case XK_5 & 0xFF:                     return Rml::Input::KI_5;
-	case XK_6 & 0xFF:                     return Rml::Input::KI_6;
-	case XK_7 & 0xFF:                     return Rml::Input::KI_7;
-	case XK_8 & 0xFF:                     return Rml::Input::KI_8;
-	case XK_9 & 0xFF:                     return Rml::Input::KI_9;
-	case XK_semicolon & 0xFF:             return Rml::Input::KI_OEM_1;
-	case XK_equal & 0xFF:                 return Rml::Input::KI_OEM_PLUS;
-	case XK_bracketleft & 0xFF:           return Rml::Input::KI_OEM_4;
-	case XK_backslash & 0xFF:             return Rml::Input::KI_OEM_5;
-	case XK_bracketright & 0xFF:          return Rml::Input::KI_OEM_6;
-	case XK_grave & 0xFF:                 return Rml::Input::KI_OEM_3;
-	case XK_a & 0xFF:                     return Rml::Input::KI_A;
-	case XK_b & 0xFF:                     return Rml::Input::KI_B;
-	case XK_c & 0xFF:                     return Rml::Input::KI_C;
-	case XK_d & 0xFF:                     return Rml::Input::KI_D;
-	case XK_e & 0xFF:                     return Rml::Input::KI_E;
-	case XK_f & 0xFF:                     return Rml::Input::KI_F;
-	case XK_g & 0xFF:                     return Rml::Input::KI_G;
-	case XK_h & 0xFF:                     return Rml::Input::KI_H;
-	case XK_i & 0xFF:                     return Rml::Input::KI_I;
-	case XK_j & 0xFF:                     return Rml::Input::KI_J;
-	case XK_k & 0xFF:                     return Rml::Input::KI_K;
-	case XK_l & 0xFF:                     return Rml::Input::KI_L;
-	case XK_m & 0xFF:                     return Rml::Input::KI_M;
-	case XK_n & 0xFF:                     return Rml::Input::KI_N;
-	case XK_o & 0xFF:                     return Rml::Input::KI_O;
-	case XK_p & 0xFF:                     return Rml::Input::KI_P;
-	case XK_q & 0xFF:                     return Rml::Input::KI_Q;
-	case XK_r & 0xFF:                     return Rml::Input::KI_R;
-	case XK_s & 0xFF:                     return Rml::Input::KI_S;
-	case XK_t & 0xFF:                     return Rml::Input::KI_T;
-	case XK_u & 0xFF:                     return Rml::Input::KI_U;
-	case XK_v & 0xFF:                     return Rml::Input::KI_V;
-	case XK_w & 0xFF:                     return Rml::Input::KI_W;
-	case XK_x & 0xFF:                     return Rml::Input::KI_X;
-	case XK_y & 0xFF:                     return Rml::Input::KI_Y;
-	case XK_z & 0xFF:                     return Rml::Input::KI_Z;
-	default: break;
-	}
-	// clang-format on
-
-	return Rml::Input::KI_UNKNOWN;
-}
-
-int RmlX11::ConvertMouseButton(unsigned int x11_mouse_button)
-{
-	switch (x11_mouse_button)
-	{
-	case Button1: return 0;
-	case Button2: return 2;
-	case Button3: return 1;
-	default: break;
-	}
-	return 0;
+	key_identifier_map[XK_space & 0xFF] = Rml::Input::KI_SPACE;
+	key_identifier_map[XK_apostrophe & 0xFF] = Rml::Input::KI_OEM_7;
+	key_identifier_map[XK_comma & 0xFF] = Rml::Input::KI_OEM_COMMA;
+	key_identifier_map[XK_minus & 0xFF] = Rml::Input::KI_OEM_MINUS;
+	key_identifier_map[XK_period & 0xFF] = Rml::Input::KI_OEM_PERIOD;
+	key_identifier_map[XK_slash & 0xFF] = Rml::Input::KI_OEM_2;
+	key_identifier_map[XK_0 & 0xFF] = Rml::Input::KI_0;
+	key_identifier_map[XK_1 & 0xFF] = Rml::Input::KI_1;
+	key_identifier_map[XK_2 & 0xFF] = Rml::Input::KI_2;
+	key_identifier_map[XK_3 & 0xFF] = Rml::Input::KI_3;
+	key_identifier_map[XK_4 & 0xFF] = Rml::Input::KI_4;
+	key_identifier_map[XK_5 & 0xFF] = Rml::Input::KI_5;
+	key_identifier_map[XK_6 & 0xFF] = Rml::Input::KI_6;
+	key_identifier_map[XK_7 & 0xFF] = Rml::Input::KI_7;
+	key_identifier_map[XK_8 & 0xFF] = Rml::Input::KI_8;
+	key_identifier_map[XK_9 & 0xFF] = Rml::Input::KI_9;
+	key_identifier_map[XK_semicolon & 0xFF] = Rml::Input::KI_OEM_1;
+	key_identifier_map[XK_equal & 0xFF] = Rml::Input::KI_OEM_PLUS;
+	key_identifier_map[XK_bracketleft & 0xFF] = Rml::Input::KI_OEM_4;
+	key_identifier_map[XK_backslash & 0xFF] = Rml::Input::KI_OEM_5;
+	key_identifier_map[XK_bracketright & 0xFF] = Rml::Input::KI_OEM_6;
+	key_identifier_map[XK_grave & 0xFF] = Rml::Input::KI_OEM_3;
+	key_identifier_map[XK_a & 0xFF] = Rml::Input::KI_A;
+	key_identifier_map[XK_b & 0xFF] = Rml::Input::KI_B;
+	key_identifier_map[XK_c & 0xFF] = Rml::Input::KI_C;
+	key_identifier_map[XK_d & 0xFF] = Rml::Input::KI_D;
+	key_identifier_map[XK_e & 0xFF] = Rml::Input::KI_E;
+	key_identifier_map[XK_f & 0xFF] = Rml::Input::KI_F;
+	key_identifier_map[XK_g & 0xFF] = Rml::Input::KI_G;
+	key_identifier_map[XK_h & 0xFF] = Rml::Input::KI_H;
+	key_identifier_map[XK_i & 0xFF] = Rml::Input::KI_I;
+	key_identifier_map[XK_j & 0xFF] = Rml::Input::KI_J;
+	key_identifier_map[XK_k & 0xFF] = Rml::Input::KI_K;
+	key_identifier_map[XK_l & 0xFF] = Rml::Input::KI_L;
+	key_identifier_map[XK_m & 0xFF] = Rml::Input::KI_M;
+	key_identifier_map[XK_n & 0xFF] = Rml::Input::KI_N;
+	key_identifier_map[XK_o & 0xFF] = Rml::Input::KI_O;
+	key_identifier_map[XK_p & 0xFF] = Rml::Input::KI_P;
+	key_identifier_map[XK_q & 0xFF] = Rml::Input::KI_Q;
+	key_identifier_map[XK_r & 0xFF] = Rml::Input::KI_R;
+	key_identifier_map[XK_s & 0xFF] = Rml::Input::KI_S;
+	key_identifier_map[XK_t & 0xFF] = Rml::Input::KI_T;
+	key_identifier_map[XK_u & 0xFF] = Rml::Input::KI_U;
+	key_identifier_map[XK_v & 0xFF] = Rml::Input::KI_V;
+	key_identifier_map[XK_w & 0xFF] = Rml::Input::KI_W;
+	key_identifier_map[XK_x & 0xFF] = Rml::Input::KI_X;
+	key_identifier_map[XK_y & 0xFF] = Rml::Input::KI_Y;
+	key_identifier_map[XK_z & 0xFF] = Rml::Input::KI_Z;
 }
 
 /**

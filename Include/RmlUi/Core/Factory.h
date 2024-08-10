@@ -4,7 +4,7 @@
  * For the latest information, see http://github.com/mikke89/RmlUi
  *
  * Copyright (c) 2008-2010 CodePoint Ltd, Shift Technology Ltd
- * Copyright (c) 2019-2023 The RmlUi Team, and contributors
+ * Copyright (c) 2019 The RmlUi Team, and contributors
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -15,7 +15,7 @@
  *
  * The above copyright notice and this permission notice shall be included in
  * all copies or substantial portions of the Software.
- *
+ * 
  * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
  * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
  * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -29,8 +29,8 @@
 #ifndef RMLUI_CORE_FACTORY_H
 #define RMLUI_CORE_FACTORY_H
 
-#include "Header.h"
 #include "XMLParser.h"
+#include "Header.h"
 
 namespace Rml {
 
@@ -49,6 +49,7 @@ class EventListener;
 class EventListenerInstancer;
 class FontEffect;
 class FontEffectInstancer;
+class RenderInterface;
 class StyleSheetContainer;
 class PropertyDictionary;
 class PropertySpecification;
@@ -56,15 +57,16 @@ class DecoratorInstancerInterface;
 enum class EventId : uint16_t;
 
 /**
-    The Factory contains a registry of instancers for different types.
+	The Factory contains a registry of instancers for different types.
 
-    All instantiation of these rmlui types should go through the factory
-    so that scripting API's can bind in new types.
+	All instantiation of these rmlui types should go through the factory
+	so that scripting API's can bind in new types.
 
-    @author Lloyd Weehuizen
+	@author Lloyd Weehuizen
  */
 
-class RMLUICORE_API Factory {
+class RMLUICORE_API Factory
+{
 public:
 	/// Initialise the element factory
 	static bool Initialise();
@@ -77,8 +79,9 @@ public:
 	static void RegisterContextInstancer(ContextInstancer* instancer);
 	/// Instances a new context.
 	/// @param[in] name The name of the new context.
+	/// @param[in] render_interface The render interface to use with the context.
 	/// @return The new context, or nullptr if no context could be created.
-	static ContextPtr InstanceContext(const String& name);
+	static ContextPtr InstanceContext(const String& name, RenderInterface* render_interface);
 
 	/// Registers a non-owning pointer to the element instancer that will be used to instance an element when the specified tag is encountered.
 	/// @param[in] name Name of the instancer; elements with this as their tag will use this instancer.

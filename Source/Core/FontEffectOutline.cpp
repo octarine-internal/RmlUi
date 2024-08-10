@@ -4,7 +4,7 @@
  * For the latest information, see http://github.com/mikke89/RmlUi
  *
  * Copyright (c) 2008-2010 CodePoint Ltd, Shift Technology Ltd
- * Copyright (c) 2019-2023 The RmlUi Team, and contributors
+ * Copyright (c) 2019 The RmlUi Team, and contributors
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -15,7 +15,7 @@
  *
  * The above copyright notice and this permission notice shall be included in
  * all copies or substantial portions of the Software.
- *
+ * 
  * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
  * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
  * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -37,7 +37,9 @@ FontEffectOutline::FontEffectOutline()
 	SetLayer(Layer::Back);
 }
 
-FontEffectOutline::~FontEffectOutline() {}
+FontEffectOutline::~FontEffectOutline()
+{
+}
 
 bool FontEffectOutline::HasUniqueTexture() const
 {
@@ -72,8 +74,10 @@ bool FontEffectOutline::Initialise(int _width)
 	return true;
 }
 
-bool FontEffectOutline::GetGlyphMetrics(Vector2i& origin, Vector2i& dimensions, const FontGlyph& /*glyph*/) const
+bool FontEffectOutline::GetGlyphMetrics(Vector2i& origin, Vector2i& dimensions, const FontGlyph& RMLUI_UNUSED_PARAMETER(glyph)) const
 {
+	RMLUI_UNUSED(glyph);
+
 	if (dimensions.x * dimensions.y > 0)
 	{
 		origin.x -= width;
@@ -88,12 +92,13 @@ bool FontEffectOutline::GetGlyphMetrics(Vector2i& origin, Vector2i& dimensions, 
 	return false;
 }
 
-void FontEffectOutline::GenerateGlyphTexture(byte* destination_data, const Vector2i destination_dimensions, int destination_stride,
-	const FontGlyph& glyph) const
+void FontEffectOutline::GenerateGlyphTexture(byte* destination_data, const Vector2i destination_dimensions, int destination_stride, const FontGlyph& glyph) const
 {
 	filter.Run(destination_data, destination_dimensions, destination_stride, ColorFormat::RGBA8, glyph.bitmap_data, glyph.bitmap_dimensions,
 		Vector2i(width), glyph.color_format);
 }
+
+
 
 FontEffectOutlineInstancer::FontEffectOutlineInstancer() : id_width(PropertyId::Invalid), id_color(PropertyId::Invalid)
 {
@@ -102,15 +107,19 @@ FontEffectOutlineInstancer::FontEffectOutlineInstancer() : id_width(PropertyId::
 	RegisterShorthand("font-effect", "width, color", ShorthandType::FallThrough);
 }
 
-FontEffectOutlineInstancer::~FontEffectOutlineInstancer() {}
-
-SharedPtr<FontEffect> FontEffectOutlineInstancer::InstanceFontEffect(const String& /*name*/, const PropertyDictionary& properties)
+FontEffectOutlineInstancer::~FontEffectOutlineInstancer()
 {
-	float width = properties.GetProperty(id_width)->Get<float>();
-	Colourb color = properties.GetProperty(id_color)->Get<Colourb>();
+}
+
+SharedPtr<FontEffect> FontEffectOutlineInstancer::InstanceFontEffect(const String& RMLUI_UNUSED_PARAMETER(name), const PropertyDictionary& properties)
+{
+	RMLUI_UNUSED(name);
+
+	float width = properties.GetProperty(id_width)->Get< float >();
+	Colourb color = properties.GetProperty(id_color)->Get< Colourb >();
 
 	auto font_effect = MakeShared<FontEffectOutline>();
-	if (font_effect->Initialise(int(width)))
+	if (font_effect->Initialise(Math::RealToInteger(width)))
 	{
 		font_effect->SetColour(color);
 		return font_effect;

@@ -4,7 +4,7 @@
  * For the latest information, see http://github.com/mikke89/RmlUi
  *
  * Copyright (c) 2008-2010 CodePoint Ltd, Shift Technology Ltd
- * Copyright (c) 2019-2023 The RmlUi Team, and contributors
+ * Copyright (c) 2019 The RmlUi Team, and contributors
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -32,8 +32,8 @@
 #include <RmlUi/Core/Element.h>
 #include <RmlUi/Core/ElementDocument.h>
 #include <RmlUi/Core/Factory.h>
-#include <algorithm>
 #include <doctest.h>
+#include <algorithm>
 
 using namespace Rml;
 
@@ -120,7 +120,7 @@ TEST_CASE("Focus")
 		document->Focus();
 		SUBCASE("Forward")
 		{
-			for (const String& id : ids)
+			for(const String& id : ids)
 			{
 				context->ProcessKeyDown(Input::KI_TAB, 0);
 				CHECK(context->GetFocusElement()->GetId() == id);
@@ -269,18 +269,6 @@ TEST_CASE("Load")
 
 	ElementDocument* document = context->LoadDocumentFromMemory(document_focus_rml);
 	REQUIRE(document);
-
-	document->Close();
-	TestsShell::ShutdownShell();
-}
-
-TEST_CASE("ReloadStyleSheet")
-{
-	Context* context = TestsShell::GetContext();
-	ElementDocument* document = context->LoadDocument("basic/demo/data/demo.rml");
-
-	// There should be no warnings when reloading style sheets.
-	document->ReloadStyleSheet();
 
 	document->Close();
 	TestsShell::ShutdownShell();

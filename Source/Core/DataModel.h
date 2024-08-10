@@ -4,7 +4,7 @@
  * For the latest information, see http://github.com/mikke89/RmlUi
  *
  * Copyright (c) 2008-2010 CodePoint Ltd, Shift Technology Ltd
- * Copyright (c) 2019-2023 The RmlUi Team, and contributors
+ * Copyright (c) 2019 The RmlUi Team, and contributors
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -29,11 +29,11 @@
 #ifndef RMLUI_CORE_DATAMODEL_H
 #define RMLUI_CORE_DATAMODEL_H
 
+#include "../../Include/RmlUi/Core/Header.h"
+#include "../../Include/RmlUi/Core/Types.h"
+#include "../../Include/RmlUi/Core/Traits.h"
 #include "../../Include/RmlUi/Core/DataModelHandle.h"
 #include "../../Include/RmlUi/Core/DataTypes.h"
-#include "../../Include/RmlUi/Core/Header.h"
-#include "../../Include/RmlUi/Core/Traits.h"
-#include "../../Include/RmlUi/Core/Types.h"
 
 namespace Rml {
 
@@ -43,9 +43,10 @@ class DataVariable;
 class Element;
 class FuncDefinition;
 
+
 class DataModel : NonCopyMoveable {
 public:
-	DataModel(DataTypeRegister* data_type_register = nullptr);
+	DataModel(const TransformFuncRegister* transform_register = nullptr);
 	~DataModel();
 
 	void AddView(DataViewPtr view);
@@ -58,7 +59,6 @@ public:
 
 	bool InsertAlias(Element* element, const String& alias_name, DataAddress replace_with_address);
 	bool EraseAliases(Element* element);
-	void CopyAliases(Element* source_element, Element* target_element);
 
 	DataAddress ResolveAddress(const String& address_str, Element* element) const;
 	const DataEventFunc* GetEventCallback(const String& name);
@@ -70,7 +70,7 @@ public:
 	bool IsVariableDirty(const String& variable_name) const;
 	void DirtyAllVariables();
 
-	bool CallTransform(const String& name, const VariantList& arguments, Variant& out_result) const;
+	bool CallTransform(const String& name, Variant& inout_result, const VariantList& arguments) const;
 
 	// Elements declaring 'data-model' need to be attached.
 	void AttachModelRootElement(Element* element);
@@ -79,8 +79,6 @@ public:
 	void OnElementRemove(Element* element);
 
 	bool Update(bool clear_dirty_variables);
-
-	inline DataTypeRegister* GetDataTypeRegister() const { return data_type_register; }
 
 private:
 	UniquePtr<DataViews> views;
@@ -95,10 +93,11 @@ private:
 	using ScopedAliases = UnorderedMap<Element*, SmallUnorderedMap<String, DataAddress>>;
 	ScopedAliases aliases;
 
-	DataTypeRegister* data_type_register;
+	const TransformFuncRegister* transform_register;
 
 	SmallUnorderedSet<Element*> attached_elements;
 };
+
 
 } // namespace Rml
 #endif

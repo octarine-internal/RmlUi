@@ -4,7 +4,7 @@
  * For the latest information, see http://github.com/mikke89/RmlUi
  *
  * Copyright (c) 2008-2010 CodePoint Ltd, Shift Technology Ltd
- * Copyright (c) 2019-2023 The RmlUi Team, and contributors
+ * Copyright (c) 2019 The RmlUi Team, and contributors
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -15,7 +15,7 @@
  *
  * The above copyright notice and this permission notice shall be included in
  * all copies or substantial portions of the Software.
- *
+ * 
  * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
  * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
  * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -37,13 +37,14 @@ enum class BoxEdge { Top, Right, Bottom, Left };
 enum class BoxDirection { Vertical, Horizontal };
 
 /**
-    Stores a box with four sized areas; content, padding, a border and margin. See
-    http://www.w3.org/TR/REC-CSS2/box.html#box-dimensions for a diagram.
+	Stores a box with four sized areas; content, padding, a border and margin. See
+	http://www.w3.org/TR/REC-CSS2/box.html#box-dimensions for a diagram.
 
-    @author Peter Curry
+	@author Peter Curry
  */
 
-class RMLUICORE_API Box {
+class RMLUICORE_API Box
+{
 public:
 	static constexpr int num_areas = 3; // ignores content box
 	static constexpr int num_edges = 4;
@@ -51,7 +52,7 @@ public:
 	/// Initialises a zero-sized box.
 	Box();
 	/// Initialises a box with a default content area and no padding, borders and margins.
-	explicit Box(Vector2f content);
+	Box(Vector2f content);
 	~Box();
 
 	/// Returns the top-left position of one of the box's areas, relative to the top-left of the border area. This
@@ -82,8 +83,7 @@ public:
 	/// @return The size of the requested area edge.
 	float GetEdge(BoxArea area, BoxEdge edge) const;
 	/// Returns the cumulative size of one edge up to one of the box's areas.
-	/// @param area[in] The area to measure up to (and including). So, Margin will return the width of the margin, and Padding will be the sum of the
-	/// margin, border and padding.
+	/// @param area[in] The area to measure up to (and including). So, Margin will return the width of the margin, and Padding will be the sum of the margin, border and padding.
 	/// @param edge[in] The desired edge.
 	/// @return The cumulative size of the edge.
 	float GetCumulativeEdge(BoxArea area, BoxEdge edge) const;
@@ -95,10 +95,6 @@ public:
 	/// @param area_end The last area to include, anything inside this is excluded.
 	float GetSizeAcross(BoxDirection direction, BoxArea area, BoxArea area_end = BoxArea::Content) const;
 
-	/// Returns the size of the frame defined by the given area, not including inner areas.
-	/// @param area The area to use.
-	Vector2f GetFrameSize(BoxArea area) const;
-
 	/// Compares the size of the content area and the other area edges.
 	/// @return True if the boxes represent the same area.
 	bool operator==(const Box& rhs) const;
@@ -108,7 +104,7 @@ public:
 
 private:
 	Vector2f content;
-	float area_edges[num_areas][num_edges] = {};
+	float area_edges[num_areas][num_edges];
 };
 
 } // namespace Rml

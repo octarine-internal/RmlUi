@@ -4,7 +4,7 @@
  * For the latest information, see http://github.com/mikke89/RmlUi
  *
  * Copyright (c) 2008-2010 CodePoint Ltd, Shift Technology Ltd
- * Copyright (c) 2019-2023 The RmlUi Team, and contributors
+ * Copyright (c) 2019 The RmlUi Team, and contributors
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -15,7 +15,7 @@
  *
  * The above copyright notice and this permission notice shall be included in
  * all copies or substantial portions of the Software.
- *
+ * 
  * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
  * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
  * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -30,9 +30,9 @@
 #define RMLUI_CORE_ELEMENTSTYLE_H
 
 #include "../../Include/RmlUi/Core/ComputedValues.h"
-#include "../../Include/RmlUi/Core/PropertyDictionary.h"
-#include "../../Include/RmlUi/Core/PropertyIdSet.h"
 #include "../../Include/RmlUi/Core/Types.h"
+#include "../../Include/RmlUi/Core/PropertyIdSet.h"
+#include "../../Include/RmlUi/Core/PropertyDictionary.h"
 
 namespace Rml {
 
@@ -40,15 +40,17 @@ class ElementDefinition;
 class PropertiesIterator;
 enum class RelativeTarget;
 
-enum class PseudoClassState : uint8_t { Clear = 0, Set = 1, Override = 2 };
-using PseudoClassMap = SmallUnorderedMap<String, PseudoClassState>;
+enum class PseudoClassState : std::uint8_t { Clear = 0, Set = 1, Override = 2 };
+using PseudoClassMap = SmallUnorderedMap< String, PseudoClassState >;
+
 
 /**
-    Manages an element's style and property information.
-    @author Lloyd Weehuizen
+	Manages an element's style and property information.
+	@author Lloyd Weehuizen
  */
 
-class ElementStyle {
+class ElementStyle
+{
 public:
 	/// Constructor
 	/// @param[in] element The element this structure belongs to.
@@ -74,8 +76,7 @@ public:
 	/// Sets or removes a class on the element.
 	/// @param[in] class_name The name of the class to add or remove from the class list.
 	/// @param[in] activate True if the class is to be added, false to be removed.
-	/// @return True if the class was changed, false otherwise.
-	bool SetClass(const String& class_name, bool activate);
+	void SetClass(const String& class_name, bool activate);
 	/// Checks if a class is set on the element.
 	/// @param[in] class_name The name of the class to check for.
 	/// @return True if the class is set on the element, false otherwise.
@@ -117,7 +118,10 @@ public:
 	float ResolveNumericValue(NumericValue value, float base_value) const;
 	/// Resolves a property with units of number, length, or percentage to a length in 'px' units.
 	/// Numbers and percentages are resolved by scaling the size of the specified target.
-	float ResolveRelativeLength(NumericValue value, RelativeTarget relative_target) const;
+	float ResolveLength(NumericValue value, RelativeTarget relative_target) const;
+
+	/// Mark definition and all children dirty.
+	void DirtyDefinition();
 
 	/// Mark inherited properties dirty.
 	/// Inherited properties will automatically be set when parent inherited properties are changed. However,
@@ -136,22 +140,21 @@ public:
 
 	/// Turns the local and inherited properties into computed values for this element. These values can in turn be used during the layout procedure.
 	/// Must be called in correct order, always parent before its children.
-	PropertyIdSet ComputeValues(Style::ComputedValues& values, const Style::ComputedValues* parent_values,
-		const Style::ComputedValues* document_values, bool values_are_default_initialized, float dp_ratio, Vector2f vp_dimensions);
+	PropertyIdSet ComputeValues(Style::ComputedValues& values, const Style::ComputedValues* parent_values, const Style::ComputedValues* document_values, bool values_are_default_initialized, float dp_ratio, Vector2f vp_dimensions);
 
 	/// Returns an iterator for iterating the local properties of this element.
 	/// Note: Modifying the element's style invalidates its iterator.
 	PropertiesIterator Iterate() const;
 
 private:
+	// Dirty all child definitions
+	void DirtyChildDefinitions();
 	// Sets a list of properties as dirty.
 	void DirtyProperties(const PropertyIdSet& properties);
 
-	static const Property* GetLocalProperty(PropertyId id, const PropertyDictionary& inline_properties, const ElementDefinition* definition);
-	static const Property* GetProperty(PropertyId id, const Element* element, const PropertyDictionary& inline_properties,
-		const ElementDefinition* definition);
-	static void TransitionPropertyChanges(Element* element, PropertyIdSet& properties, const PropertyDictionary& inline_properties,
-		const ElementDefinition* old_definition, const ElementDefinition* new_definition);
+	static const Property* GetLocalProperty(PropertyId id, const PropertyDictionary & inline_properties, const ElementDefinition * definition);
+	static const Property* GetProperty(PropertyId id, const Element * element, const PropertyDictionary & inline_properties, const ElementDefinition * definition);
+	static void TransitionPropertyChanges(Element * element, PropertyIdSet & properties, const PropertyDictionary & inline_properties, const ElementDefinition * old_definition, const ElementDefinition * new_definition);
 
 	// Element these properties belong to
 	Element* element;
@@ -165,6 +168,8 @@ private:
 	PropertyDictionary inline_properties;
 	// The definition of this element, provides applicable properties from the stylesheet.
 	SharedPtr<const ElementDefinition> definition;
+	// Set if a new element definition should be fetched from the style.
+	bool definition_dirty;
 
 	PropertyIdSet dirty_properties;
 };

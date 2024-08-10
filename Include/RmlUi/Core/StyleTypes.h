@@ -3,7 +3,7 @@
  *
  * For the latest information, see http://github.com/mikke89/RmlUi
  *
- * Copyright (c) 2019-2023 The RmlUi Team, and contributors
+ * Copyright (c) 2019 The RmlUi Team, and contributors
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -56,22 +56,7 @@ namespace Style {
 	using Margin = LengthPercentageAuto;
 	using Padding = LengthPercentage;
 
-	enum class Display : uint8_t {
-		None,
-		Block,
-		Inline,
-		InlineBlock,
-		FlowRoot,
-		Flex,
-		InlineFlex,
-		Table,
-		InlineTable,
-		TableRow,
-		TableRowGroup,
-		TableColumn,
-		TableColumnGroup,
-		TableCell
-	};
+	enum class Display : uint8_t { None, Block, Inline, InlineBlock, Flex, Table, TableRow, TableRowGroup, TableColumn, TableColumnGroup, TableCell };
 	enum class Position : uint8_t { Static, Relative, Absolute, Fixed };
 
 	using Top = LengthPercentageAuto;
@@ -88,11 +73,11 @@ namespace Style {
 
 	using Width = LengthPercentageAuto;
 	using MinWidth = LengthPercentage;
-	using MaxWidth = LengthPercentage; // 'none' keyword converted to FLT_MAX length.
+	using MaxWidth = LengthPercentage;
 
 	using Height = LengthPercentageAuto;
 	using MinHeight = LengthPercentage;
-	using MaxHeight = LengthPercentage; // 'none' keyword converted to FLT_MAX length.
+	using MaxHeight = LengthPercentage;
 
 	struct LineHeight {
 		float value = 12.f * 1.2f; // The computed value (length)
@@ -104,7 +89,7 @@ namespace Style {
 		{}
 	};
 	struct VerticalAlign {
-		enum Type : uint8_t { Baseline, Middle, Sub, Super, TextTop, TextBottom, Top, Center, Bottom, Length } type;
+		enum Type : uint8_t { Baseline, Middle, Sub, Super, TextTop, TextBottom, Top, Bottom, Length } type;
 		float value; // For length type
 		VerticalAlign(Type type = Baseline) : type(type), value(0) {}
 		VerticalAlign(float value) : type(Length), value(value) {}
@@ -141,7 +126,6 @@ namespace Style {
 	enum class Drag : uint8_t { None, Drag, DragDrop, Block, Clone };
 	enum class TabIndex : uint8_t { None, Auto };
 	enum class Focus : uint8_t { None, Auto };
-	enum class OverscrollBehavior : uint8_t { Auto, Contain };
 	enum class PointerEvents : uint8_t { None, Auto };
 
 	using PerspectiveOrigin = LengthPercentage;
@@ -157,10 +141,6 @@ namespace Style {
 	enum class FlexDirection : uint8_t { Row, RowReverse, Column, ColumnReverse };
 	enum class FlexWrap : uint8_t { Nowrap, Wrap, WrapReverse };
 	enum class JustifyContent : uint8_t { FlexStart, FlexEnd, Center, SpaceBetween, SpaceAround };
-
-	enum class Nav : uint8_t { None, Auto, Horizontal, Vertical };
-
-	enum class Direction : uint8_t { Auto, Ltr, Rtl };
 
 	class ComputedValues;
 

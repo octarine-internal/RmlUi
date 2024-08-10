@@ -4,7 +4,7 @@
  * For the latest information, see http://github.com/mikke89/RmlUi
  *
  * Copyright (c) 2008-2010 CodePoint Ltd, Shift Technology Ltd
- * Copyright (c) 2019-2023 The RmlUi Team, and contributors
+ * Copyright (c) 2019 The RmlUi Team, and contributors
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -15,7 +15,7 @@
  *
  * The above copyright notice and this permission notice shall be included in
  * all copies or substantial portions of the Software.
- *
+ * 
  * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
  * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
  * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -28,7 +28,6 @@
 
 #include "Geometry.h"
 #include "../../Include/RmlUi/Core/Context.h"
-#include "../../Include/RmlUi/Core/Core.h"
 #include "../../Include/RmlUi/Core/GeometryUtilities.h"
 #include "../../Include/RmlUi/Core/RenderInterface.h"
 
@@ -37,18 +36,22 @@ namespace Debugger {
 
 static Context* context;
 
-Geometry::Geometry() {}
+Geometry::Geometry()
+{
+}
 
 void Geometry::SetContext(Context* _context)
 {
 	context = _context;
 }
 
+// Renders a one-pixel rectangular outline.
 void Geometry::RenderOutline(const Vector2f origin, const Vector2f dimensions, const Colourb colour, float width)
 {
-	RenderInterface* render_interface = ::Rml::GetRenderInterface();
-	if (!context || !render_interface)
+	if (context == nullptr)
 		return;
+
+	RenderInterface* render_interface = context->GetRenderInterface();
 
 	Vertex vertices[4 * 4];
 	int indices[6 * 4];
@@ -61,11 +64,13 @@ void Geometry::RenderOutline(const Vector2f origin, const Vector2f dimensions, c
 	render_interface->RenderGeometry(vertices, 4 * 4, indices, 6 * 4, 0, origin);
 }
 
+// Renders a box.
 void Geometry::RenderBox(const Vector2f origin, const Vector2f dimensions, const Colourb colour)
 {
-	RenderInterface* render_interface = ::Rml::GetRenderInterface();
-	if (!context || !render_interface)
+	if (context == nullptr)
 		return;
+
+	RenderInterface* render_interface = context->GetRenderInterface();
 
 	Vertex vertices[4];
 	int indices[6];
@@ -75,8 +80,8 @@ void Geometry::RenderBox(const Vector2f origin, const Vector2f dimensions, const
 	render_interface->RenderGeometry(vertices, 4, indices, 6, 0, origin);
 }
 
-void Geometry::RenderBox(const Vector2f origin, const Vector2f dimensions, const Vector2f hole_origin, const Vector2f hole_dimensions,
-	const Colourb colour)
+// Renders a box with a hole in the middle.
+void Geometry::RenderBox(const Vector2f origin, const Vector2f dimensions, const Vector2f hole_origin, const Vector2f hole_dimensions, const Colourb colour)
 {
 	// Top box.
 	float top_y_dimensions = hole_origin.y - origin.y;
@@ -107,5 +112,5 @@ void Geometry::RenderBox(const Vector2f origin, const Vector2f dimensions, const
 	}
 }
 
-} // namespace Debugger
-} // namespace Rml
+}
+}

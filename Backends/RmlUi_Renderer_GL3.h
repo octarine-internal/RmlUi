@@ -4,7 +4,7 @@
  * For the latest information, see http://github.com/mikke89/RmlUi
  *
  * Copyright (c) 2008-2010 CodePoint Ltd, Shift Technology Ltd
- * Copyright (c) 2019-2023 The RmlUi Team, and contributors
+ * Copyright (c) 2019 The RmlUi Team, and contributors
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -30,31 +30,17 @@
 #define RMLUI_BACKENDS_RENDERER_GL3_H
 
 #include <RmlUi/Core/RenderInterface.h>
-#include <RmlUi/Core/Types.h>
+#include <bitset>
 
-namespace Gfx {
-struct ShadersData;
-}
+struct CompiledFilter;
+enum class ProgramId { None, Texture, Color, Gradient, Creation, Passthrough, ColorMatrix, Blur, Dropshadow, BlendMask, Count };
 
 class RenderInterface_GL3 : public Rml::RenderInterface {
 public:
 	RenderInterface_GL3();
 	~RenderInterface_GL3();
 
-	// Returns true if the renderer was successfully constructed.
-	explicit operator bool() const { return static_cast<bool>(shaders); }
-
-	// The viewport should be updated whenever the window size changes.
-	void SetViewport(int viewport_width, int viewport_height);
-
-	// Sets up OpenGL states for taking rendering commands from RmlUi.
 	void BeginFrame();
-	void EndFrame();
-
-	// Optional, can be used to clear the framebuffer.
-	void Clear();
-
-	// -- Inherited from Rml::RenderInterface --
 
 	void RenderGeometry(Rml::Vertex* vertices, int num_vertices, int* indices, int num_indices, Rml::TextureHandle texture,
 		const Rml::Vector2f& translation) override;
@@ -67,75 +53,58 @@ public:
 	void EnableScissorRegion(bool enable) override;
 	void SetScissorRegion(int x, int y, int width, int height) override;
 
+	bool EnableClipMask(bool enable) override;
+	void RenderToClipMask(Rml::ClipMaskOperation mask_operation, Rml::CompiledGeometryHandle geometry, Rml::Vector2f translation) override;
+
 	bool LoadTexture(Rml::TextureHandle& texture_handle, Rml::Vector2i& texture_dimensions, const Rml::String& source) override;
 	bool GenerateTexture(Rml::TextureHandle& texture_handle, const Rml::byte* source, const Rml::Vector2i& source_dimensions) override;
 	void ReleaseTexture(Rml::TextureHandle texture_handle) override;
 
 	void SetTransform(const Rml::Matrix4f* transform) override;
 
-	// Can be passed to RenderGeometry() to enable texture rendering without changing the bound texture.
-	static const Rml::TextureHandle TextureEnableWithoutBinding = Rml::TextureHandle(-1);
+	Rml::CompiledShaderHandle CompileShader(const Rml::String& name, const Rml::Dictionary& parameters) override;
+	void RenderShader(Rml::CompiledShaderHandle shader, Rml::CompiledGeometryHandle geometry, Rml::Vector2f translation) override;
+	void ReleaseCompiledShader(Rml::CompiledShaderHandle shader) override;
+
+	Rml::CompiledFilterHandle CompileFilter(const Rml::String& name, const Rml::Dictionary& parameters) override;
+	void AttachFilter(Rml::CompiledFilterHandle filter) override;
+	void ReleaseCompiledFilter(Rml::CompiledFilterHandle filter) override;
+
+	void PushLayer(Rml::RenderClear clear_new_layer) override;
+	Rml::TextureHandle PopLayer(Rml::RenderTarget render_target, Rml::BlendMode blend_mode) override;
+
+	static const Rml::TextureHandle TextureIgnoreBinding = Rml::TextureHandle(-1);
+	static const Rml::TextureHandle TexturePostprocess = Rml::TextureHandle(-2);
 
 private:
-	enum class ProgramId { None, Texture = 1, Color = 2, All = (Texture | Color) };
-	void SubmitTransformUniform(ProgramId program_id, int uniform_location);
+	void SubmitTransformUniform(Rml::Vector2f translation);
 
-	Rml::Matrix4f transform, projection;
-	ProgramId transform_dirty_state = ProgramId::All;
-	bool transform_active = false;
+	void RenderFilters();
 
-	enum class ScissoringState { Disable, Scissor, Stencil };
-	ScissoringState scissoring_state = ScissoringState::Disable;
+	Rml::Matrix4f transform;
+	std::bitset<(size_t)ProgramId::Count> program_transform_dirty;
 
-	int viewport_width = 0;
-	int viewport_height = 0;
-
-	Rml::UniquePtr<Gfx::ShadersData> shaders;
-
-	struct GLStateBackup {
-		bool enable_cull_face;
-		bool enable_blend;
-		bool enable_stencil_test;
-		bool enable_scissor_test;
-
-		int viewport[4];
-		int scissor[4];
-
-		int stencil_clear_value;
-		float color_clear_value[4];
-
-		int blend_equation_rgb;
-		int blend_equation_alpha;
-		int blend_src_rgb;
-		int blend_dst_rgb;
-		int blend_src_alpha;
-		int blend_dst_alpha;
-
-		struct Stencil {
-			int func;
-			int ref;
-			int value_mask;
-			int writemask;
-			int fail;
-			int pass_depth_fail;
-			int pass_depth_pass;
-		};
-		Stencil stencil_front;
-		Stencil stencil_back;
+	struct ScissorState {
+		bool enabled;
+		int x, y, width, height;
 	};
-	GLStateBackup glstate_backup = {};
+	ScissorState scissor_state = {};
+
+	Rml::Vector<CompiledFilter*> attached_filters;
+	bool has_mask = false;
 };
 
-/**
-    Helper functions for the OpenGL 3 renderer.
- */
 namespace RmlGL3 {
 
-// Loads OpenGL functions. Optionally, the out message describes the loaded GL version or an error message on failure.
-bool Initialize(Rml::String* out_message = nullptr);
-
-// Unloads OpenGL functions.
+bool Initialize();
 void Shutdown();
+
+void SetViewport(int width, int height);
+
+void BeginFrame();
+void EndFrame();
+
+void Clear();
 
 } // namespace RmlGL3
 

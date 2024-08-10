@@ -4,7 +4,7 @@
  * For the latest information, see http://github.com/mikke89/RmlUi
  *
  * Copyright (c) 2008-2010 CodePoint Ltd, Shift Technology Ltd
- * Copyright (c) 2019-2023 The RmlUi Team, and contributors
+ * Copyright (c) 2019 The RmlUi Team, and contributors
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -39,6 +39,8 @@ class Property;
 // Note that numbers and percentages are not lengths, they have to be resolved elsewhere.
 float ComputeLength(NumericValue value, float font_size, float document_font_size, float dp_ratio, Vector2f vp_dimensions);
 
+float ComputeAbsoluteLength(NumericValue value);
+
 float ComputeAngle(NumericValue value);
 
 float ComputeFontsize(NumericValue value, const Style::ComputedValues& values, const Style::ComputedValues* parent_values,
@@ -61,11 +63,7 @@ Style::LengthPercentageAuto ComputeLengthPercentageAuto(const Property* property
 
 Style::LengthPercentage ComputeOrigin(const Property* property, float font_size, float document_font_size, float dp_ratio, Vector2f vp_dimensions);
 
-Style::LengthPercentage ComputeMaxSize(const Property* property, float font_size, float document_font_size, float dp_ratio, Vector2f vp_dimensions);
-
 uint16_t ComputeBorderWidth(float computed_length);
-
-String GetFontFaceDescription(const String& font_family, Style::FontStyle style, Style::FontWeight weight);
 
 extern const Style::ComputedValues DefaultComputedValues;
 

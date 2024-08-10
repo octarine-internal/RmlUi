@@ -4,7 +4,7 @@
  * For the latest information, see http://github.com/mikke89/RmlUi
  *
  * Copyright (c) 2008-2010 CodePoint Ltd, Shift Technology Ltd
- * Copyright (c) 2019-2023 The RmlUi Team, and contributors
+ * Copyright (c) 2019 The RmlUi Team, and contributors
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -15,7 +15,7 @@
  *
  * The above copyright notice and this permission notice shall be included in
  * all copies or substantial portions of the Software.
- *
+ * 
  * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
  * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
  * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -34,33 +34,39 @@
 #include "../../Include/RmlUi/Core/ElementInstancer.h"
 #include "../../Include/RmlUi/Core/ElementText.h"
 #include "../../Include/RmlUi/Core/ElementUtilities.h"
-#include "../../Include/RmlUi/Core/Elements/ElementForm.h"
-#include "../../Include/RmlUi/Core/Elements/ElementFormControlInput.h"
-#include "../../Include/RmlUi/Core/Elements/ElementFormControlSelect.h"
-#include "../../Include/RmlUi/Core/Elements/ElementFormControlTextArea.h"
-#include "../../Include/RmlUi/Core/Elements/ElementProgress.h"
-#include "../../Include/RmlUi/Core/Elements/ElementTabSet.h"
 #include "../../Include/RmlUi/Core/EventListenerInstancer.h"
 #include "../../Include/RmlUi/Core/StreamMemory.h"
 #include "../../Include/RmlUi/Core/StyleSheet.h"
 #include "../../Include/RmlUi/Core/StyleSheetContainer.h"
 #include "../../Include/RmlUi/Core/SystemInterface.h"
+
+#include "../../Include/RmlUi/Core/Elements/ElementForm.h"
+#include "../../Include/RmlUi/Core/Elements/ElementFormControlInput.h"
+#include "../../Include/RmlUi/Core/Elements/ElementFormControlDataSelect.h"
+#include "../../Include/RmlUi/Core/Elements/ElementFormControlSelect.h"
+#include "../../Include/RmlUi/Core/Elements/ElementFormControlSelect.h"
+#include "../../Include/RmlUi/Core/Elements/ElementFormControlTextArea.h"
+#include "../../Include/RmlUi/Core/Elements/ElementTabSet.h"
+#include "../../Include/RmlUi/Core/Elements/ElementProgress.h"
+#include "../../Include/RmlUi/Core/Elements/ElementDataGrid.h"
+#include "../../Include/RmlUi/Core/Elements/ElementDataGridExpandButton.h"
+#include "../../Include/RmlUi/Core/Elements/ElementDataGridCell.h"
+#include "../../Include/RmlUi/Core/Elements/ElementDataGridRow.h"
+
 #include "ContextInstancerDefault.h"
 #include "DataControllerDefault.h"
 #include "DataViewDefault.h"
-#include "DecoratorGradient.h"
-#include "DecoratorNinePatch.h"
 #include "DecoratorTiledBoxInstancer.h"
 #include "DecoratorTiledHorizontalInstancer.h"
 #include "DecoratorTiledImageInstancer.h"
 #include "DecoratorTiledVerticalInstancer.h"
+#include "DecoratorNinePatch.h"
+#include "DecoratorGradient.h"
+#include "DecoratorBlur.h"
+#include "DecoratorDropShadow.h"
+#include "DecoratorBasicFilter.h"
+#include "DecoratorShader.h"
 #include "ElementHandle.h"
-#include "Elements/ElementImage.h"
-#include "Elements/ElementLabel.h"
-#include "Elements/ElementTextSelection.h"
-#include "Elements/XMLNodeHandlerSelect.h"
-#include "Elements/XMLNodeHandlerTabSet.h"
-#include "Elements/XMLNodeHandlerTextArea.h"
 #include "EventInstancerDefault.h"
 #include "FontEffectBlur.h"
 #include "FontEffectGlow.h"
@@ -75,32 +81,41 @@
 #include "XMLNodeHandlerHead.h"
 #include "XMLNodeHandlerTemplate.h"
 #include "XMLParseTools.h"
+
+#include "Elements/ElementImage.h"
+#include "Elements/ElementLabel.h"
+#include "Elements/ElementTextSelection.h"
+#include "Elements/XMLNodeHandlerDataGrid.h"
+#include "Elements/XMLNodeHandlerSelect.h"
+#include "Elements/XMLNodeHandlerTabSet.h"
+#include "Elements/XMLNodeHandlerTextArea.h"
+
 #include <algorithm>
 
 namespace Rml {
 
 // Element instancers.
-using ElementInstancerMap = UnorderedMap<String, ElementInstancer*>;
+using ElementInstancerMap = UnorderedMap< String, ElementInstancer* >;
 static ElementInstancerMap element_instancers;
 
 // Decorator instancers.
-using DecoratorInstancerMap = UnorderedMap<String, DecoratorInstancer*>;
+using DecoratorInstancerMap = UnorderedMap< String, DecoratorInstancer* >;
 static DecoratorInstancerMap decorator_instancers;
 
 // Font effect instancers.
-using FontEffectInstancerMap = UnorderedMap<String, FontEffectInstancer*>;
+using FontEffectInstancerMap = UnorderedMap< String, FontEffectInstancer* >;
 static FontEffectInstancerMap font_effect_instancers;
 
 // Data view instancers.
-using DataViewInstancerMap = UnorderedMap<String, DataViewInstancer*>;
+using DataViewInstancerMap = UnorderedMap< String, DataViewInstancer* >;
 static DataViewInstancerMap data_view_instancers;
 
 // Data controller instancers.
-using DataControllerInstancerMap = UnorderedMap<String, DataControllerInstancer*>;
+using DataControllerInstancerMap = UnorderedMap< String, DataControllerInstancer* >;
 static DataControllerInstancerMap data_controller_instancers;
 
 // Structural data view instancers.
-using StructuralDataViewInstancerMap = SmallUnorderedMap<String, DataViewInstancer*>;
+using StructuralDataViewInstancerMap = SmallUnorderedMap< String, DataViewInstancer* >;
 static StructuralDataViewInstancerMap structural_data_view_instancers;
 
 // Structural data view names.
@@ -117,6 +132,7 @@ static EventListenerInstancer* event_listener_instancer = nullptr;
 
 // Default instancers are constructed and destroyed on Initialise and Shutdown, respectively.
 struct DefaultInstancers {
+
 	UniquePtr<ContextInstancer> context_default;
 	UniquePtr<EventInstancer> event_default;
 
@@ -130,6 +146,7 @@ struct DefaultInstancers {
 	// Control elements
 	ElementInstancerGeneric<ElementForm> form;
 	ElementInstancerGeneric<ElementFormControlInput> input;
+	ElementInstancerGeneric<ElementFormControlDataSelect> dataselect;
 	ElementInstancerGeneric<ElementFormControlSelect> select;
 	ElementInstancerGeneric<ElementLabel> element_label;
 
@@ -139,13 +156,27 @@ struct DefaultInstancers {
 
 	ElementInstancerGeneric<ElementProgress> progress;
 
+	ElementInstancerGeneric<ElementDataGrid> datagrid;
+	ElementInstancerGeneric<ElementDataGridExpandButton> datagrid_expand;
+	ElementInstancerGeneric<ElementDataGridCell> datagrid_cell;
+	ElementInstancerGeneric<ElementDataGridRow> datagrid_row;
+
 	// Decorators
 	DecoratorTiledHorizontalInstancer decorator_tiled_horizontal;
 	DecoratorTiledVerticalInstancer decorator_tiled_vertical;
 	DecoratorTiledBoxInstancer decorator_tiled_box;
 	DecoratorTiledImageInstancer decorator_image;
 	DecoratorNinePatchInstancer decorator_ninepatch;
-	DecoratorGradientInstancer decorator_gradient;
+	DecoratorBlurInstancer decorator_blur;
+	DecoratorDropShadowInstancer decorator_drop_shadow;
+	DecoratorStraightGradientInstancer decorator_straight_gradient;
+	DecoratorLinearGradientInstancer decorator_linear_gradient;
+	DecoratorRadialGradientInstancer decorator_radial_gradient;
+	DecoratorConicGradientInstancer decorator_conic_gradient;
+	DecoratorBasicFilterInstancer decorator_hue_rotate = {DecoratorBasicFilterInstancer::ValueType::Angle, "0rad"};
+	DecoratorBasicFilterInstancer decorator_basic_filter_d0 = {DecoratorBasicFilterInstancer::ValueType::NumberPercent, "0"};
+	DecoratorBasicFilterInstancer decorator_basic_filter_d1 = {DecoratorBasicFilterInstancer::ValueType::NumberPercent, "1"};
+	DecoratorShaderInstancer decorator_shader;
 
 	// Font effects
 	FontEffectBlurInstancer font_effect_blur;
@@ -164,7 +195,6 @@ struct DefaultInstancers {
 	DataViewInstancerDefault<DataViewText> data_view_text;
 	DataViewInstancerDefault<DataViewValue> data_view_value;
 	DataViewInstancerDefault<DataViewChecked> data_view_checked;
-	DataViewInstancerDefault<DataViewAlias> data_view_alias;
 
 	DataViewInstancerDefault<DataViewFor> structural_data_view_for;
 
@@ -175,9 +205,15 @@ struct DefaultInstancers {
 
 static UniquePtr<DefaultInstancers> default_instancers;
 
-Factory::Factory() {}
 
-Factory::~Factory() {}
+Factory::Factory()
+{
+}
+
+Factory::~Factory()
+{
+}
+
 
 bool Factory::Initialise()
 {
@@ -211,6 +247,7 @@ bool Factory::Initialise()
 	// Control element instancers
 	RegisterElementInstancer("form", &default_instancers->form);
 	RegisterElementInstancer("input", &default_instancers->input);
+	RegisterElementInstancer("dataselect", &default_instancers->dataselect);
 	RegisterElementInstancer("select", &default_instancers->select);
 	RegisterElementInstancer("label", &default_instancers->element_label);
 
@@ -221,13 +258,39 @@ bool Factory::Initialise()
 	RegisterElementInstancer("progress", &default_instancers->progress);
 	RegisterElementInstancer("progressbar", &default_instancers->progress);
 
+	RegisterElementInstancer("datagrid", &default_instancers->datagrid);
+	RegisterElementInstancer("datagridexpand", &default_instancers->datagrid_expand);
+	RegisterElementInstancer("#rmlctl_datagridcell", &default_instancers->datagrid_cell);
+	RegisterElementInstancer("#rmlctl_datagridrow", &default_instancers->datagrid_row);
+
 	// Decorator instancers
 	RegisterDecoratorInstancer("tiled-horizontal", &default_instancers->decorator_tiled_horizontal);
 	RegisterDecoratorInstancer("tiled-vertical", &default_instancers->decorator_tiled_vertical);
 	RegisterDecoratorInstancer("tiled-box", &default_instancers->decorator_tiled_box);
 	RegisterDecoratorInstancer("image", &default_instancers->decorator_image);
 	RegisterDecoratorInstancer("ninepatch", &default_instancers->decorator_ninepatch);
-	RegisterDecoratorInstancer("gradient", &default_instancers->decorator_gradient);
+	RegisterDecoratorInstancer("blur", &default_instancers->decorator_blur);
+	RegisterDecoratorInstancer("drop-shadow", &default_instancers->decorator_drop_shadow);
+	RegisterDecoratorInstancer("gradient", &default_instancers->decorator_straight_gradient);
+	RegisterDecoratorInstancer("horizontal-gradient", &default_instancers->decorator_straight_gradient);
+	RegisterDecoratorInstancer("vertical-gradient", &default_instancers->decorator_straight_gradient);
+	RegisterDecoratorInstancer("linear-gradient", &default_instancers->decorator_linear_gradient);
+	RegisterDecoratorInstancer("repeating-linear-gradient", &default_instancers->decorator_linear_gradient);
+	RegisterDecoratorInstancer("radial-gradient", &default_instancers->decorator_radial_gradient);
+	RegisterDecoratorInstancer("repeating-radial-gradient", &default_instancers->decorator_radial_gradient);
+	RegisterDecoratorInstancer("conic-gradient", &default_instancers->decorator_conic_gradient);
+	RegisterDecoratorInstancer("repeating-conic-gradient", &default_instancers->decorator_conic_gradient);
+	RegisterDecoratorInstancer("hue-rotate", &default_instancers->decorator_hue_rotate);
+	RegisterDecoratorInstancer("shader", &default_instancers->decorator_shader);
+	
+	// Basic filters
+	RegisterDecoratorInstancer("brightness", &default_instancers->decorator_basic_filter_d1);
+	RegisterDecoratorInstancer("contrast", &default_instancers->decorator_basic_filter_d1);
+	RegisterDecoratorInstancer("grayscale", &default_instancers->decorator_basic_filter_d0);
+	RegisterDecoratorInstancer("invert", &default_instancers->decorator_basic_filter_d0);
+	RegisterDecoratorInstancer("opacity", &default_instancers->decorator_basic_filter_d1);
+	RegisterDecoratorInstancer("saturate", &default_instancers->decorator_basic_filter_d1);
+	RegisterDecoratorInstancer("sepia", &default_instancers->decorator_basic_filter_d0);
 
 	// Font effect instancers
 	RegisterFontEffectInstancer("blur", &default_instancers->font_effect_blur);
@@ -236,7 +299,6 @@ bool Factory::Initialise()
 	RegisterFontEffectInstancer("shadow", &default_instancers->font_effect_shadow);
 
 	// Data binding views
-	// clang-format off
 	RegisterDataViewInstancer(&default_instancers->data_view_attribute,      "attr",    false);
 	RegisterDataViewInstancer(&default_instancers->data_view_attribute_if,   "attrif",  false);
 	RegisterDataViewInstancer(&default_instancers->data_view_class,          "class",   false);
@@ -247,9 +309,7 @@ bool Factory::Initialise()
 	RegisterDataViewInstancer(&default_instancers->data_view_text,           "text",    false);
 	RegisterDataViewInstancer(&default_instancers->data_view_value,          "value",   false);
 	RegisterDataViewInstancer(&default_instancers->data_view_checked,        "checked", false);
-	RegisterDataViewInstancer(&default_instancers->data_view_alias,          "alias",   false);
 	RegisterDataViewInstancer(&default_instancers->structural_data_view_for, "for",     true );
-	// clang-format on
 
 	// Data binding controllers
 	RegisterDataControllerInstancer(&default_instancers->data_controller_value, "checked");
@@ -263,6 +323,7 @@ bool Factory::Initialise()
 	XMLParser::RegisterNodeHandler("template", MakeShared<XMLNodeHandlerTemplate>());
 
 	// XML node handlers for control elements
+	XMLParser::RegisterNodeHandler("datagrid", MakeShared<XMLNodeHandlerDataGrid>());
 	XMLParser::RegisterNodeHandler("tabset", MakeShared<XMLNodeHandlerTabSet>());
 	XMLParser::RegisterNodeHandler("textarea", MakeShared<XMLNodeHandlerTextArea>());
 	XMLParser::RegisterNodeHandler("select", MakeShared<XMLNodeHandlerSelect>());
@@ -294,14 +355,16 @@ void Factory::Shutdown()
 	default_instancers.reset();
 }
 
+// Registers the instancer to use when instancing contexts.
 void Factory::RegisterContextInstancer(ContextInstancer* instancer)
 {
 	context_instancer = instancer;
 }
 
-ContextPtr Factory::InstanceContext(const String& name)
+// Instances a new context.
+ContextPtr Factory::InstanceContext(const String& name, RenderInterface* render_interface)
 {
-	ContextPtr new_context = context_instancer->InstanceContext(name);
+	ContextPtr new_context = context_instancer->InstanceContext(name, render_interface);
 	if (new_context)
 		new_context->SetInstancer(context_instancer);
 	return new_context;
@@ -312,6 +375,7 @@ void Factory::RegisterElementInstancer(const String& name, ElementInstancer* ins
 	element_instancers[StringUtilities::ToLower(name)] = instancer;
 }
 
+// Looks up the instancer for the given element
 ElementInstancer* Factory::GetElementInstancer(const String& tag)
 {
 	ElementInstancerMap::iterator instancer_iterator = element_instancers.find(tag);
@@ -325,6 +389,7 @@ ElementInstancer* Factory::GetElementInstancer(const String& tag)
 	return instancer_iterator->second;
 }
 
+// Instances a single element.
 ElementPtr Factory::InstanceElement(Element* parent, const String& instancer_name, const String& tag, const XMLAttributes& attributes)
 {
 	if (ElementInstancer* instancer = GetElementInstancer(instancer_name))
@@ -342,6 +407,7 @@ ElementPtr Factory::InstanceElement(Element* parent, const String& instancer_nam
 	return nullptr;
 }
 
+// Instances a single text element containing a string.
 bool Factory::InstanceElementText(Element* parent, const String& in_text)
 {
 	RMLUI_ASSERT(parent);
@@ -398,7 +464,7 @@ bool Factory::InstanceElementText(Element* parent, const String& in_text)
 	else
 	{
 		RMLUI_ZoneScopedNC("InstanceText", 0x8FBC8F);
-
+		
 		// Attempt to instance the element.
 		XMLAttributes attributes;
 
@@ -414,16 +480,12 @@ bool Factory::InstanceElementText(Element* parent, const String& in_text)
 		}
 
 		// Assign the element its text value.
-		ElementText* text_element = rmlui_dynamic_cast<ElementText*>(element.get());
+		ElementText* text_element = rmlui_dynamic_cast< ElementText* >(element.get());
 		if (!text_element)
 		{
-			Log::Message(Log::LT_ERROR, "Failed to instance text element '%s'. Found type '%s', was expecting a derivative of ElementText.",
-				text.c_str(), rmlui_type_name(*element));
+			Log::Message(Log::LT_ERROR, "Failed to instance text element '%s'. Found type '%s', was expecting a derivative of ElementText.", text.c_str(), rmlui_type_name(*element));
 			return false;
 		}
-
-		// Unescape any escaped entities or unicode symbols
-		text = StringUtilities::DecodeRml(text);
 
 		text_element->SetText(text);
 
@@ -434,6 +496,7 @@ bool Factory::InstanceElementText(Element* parent, const String& in_text)
 	return true;
 }
 
+// Instances a element tree based on the stream
 bool Factory::InstanceElementStream(Element* parent, Stream* stream)
 {
 	XMLParser parser(parent);
@@ -441,6 +504,7 @@ bool Factory::InstanceElementStream(Element* parent, Stream* stream)
 	return true;
 }
 
+// Instances a element tree based on the stream
 ElementPtr Factory::InstanceDocumentStream(Context* context, Stream* stream, const String& document_base_tag)
 {
 	RMLUI_ZoneScoped;
@@ -452,11 +516,10 @@ ElementPtr Factory::InstanceDocumentStream(Context* context, Stream* stream, con
 		return nullptr;
 	}
 
-	ElementDocument* document = rmlui_dynamic_cast<ElementDocument*>(element.get());
+	ElementDocument* document = rmlui_dynamic_cast< ElementDocument* >(element.get());
 	if (!document)
 	{
-		Log::Message(Log::LT_ERROR, "Failed to instance document element. Found type '%s', was expecting derivative of ElementDocument.",
-			rmlui_type_name(*element));
+		Log::Message(Log::LT_ERROR, "Failed to instance document element. Found type '%s', was expecting derivative of ElementDocument.", rmlui_type_name(*element));
 		return nullptr;
 	}
 
@@ -468,21 +531,25 @@ ElementPtr Factory::InstanceDocumentStream(Context* context, Stream* stream, con
 	return element;
 }
 
+
+// Registers an instancer that will be used to instance decorators.
 void Factory::RegisterDecoratorInstancer(const String& name, DecoratorInstancer* instancer)
 {
 	RMLUI_ASSERT(instancer);
 	decorator_instancers[StringUtilities::ToLower(name)] = instancer;
 }
 
+// Retrieves a decorator instancer registered with the factory.
 DecoratorInstancer* Factory::GetDecoratorInstancer(const String& name)
 {
 	auto iterator = decorator_instancers.find(name);
 	if (iterator == decorator_instancers.end())
 		return nullptr;
-
+	
 	return iterator->second;
 }
 
+// Registers an instancer that will be used to instance font effects.
 void Factory::RegisterFontEffectInstancer(const String& name, FontEffectInstancer* instancer)
 {
 	RMLUI_ASSERT(instancer);
@@ -498,12 +565,15 @@ FontEffectInstancer* Factory::GetFontEffectInstancer(const String& name)
 	return iterator->second;
 }
 
+
+// Creates a style sheet containing the passed in styles.
 SharedPtr<StyleSheetContainer> Factory::InstanceStyleSheetString(const String& string)
 {
-	auto memory_stream = MakeUnique<StreamMemory>((const byte*)string.c_str(), string.size());
+	auto memory_stream = MakeUnique<StreamMemory>((const byte*) string.c_str(), string.size());
 	return InstanceStyleSheetStream(memory_stream.get());
 }
 
+// Creates a style sheet from a file.
 SharedPtr<StyleSheetContainer> Factory::InstanceStyleSheetFile(const String& file_name)
 {
 	auto file_stream = MakeUnique<StreamFile>();
@@ -511,6 +581,7 @@ SharedPtr<StyleSheetContainer> Factory::InstanceStyleSheetFile(const String& fil
 	return InstanceStyleSheetStream(file_stream.get());
 }
 
+// Creates a style sheet from an Stream.
 SharedPtr<StyleSheetContainer> Factory::InstanceStyleSheetStream(Stream* stream)
 {
 	SharedPtr<StyleSheetContainer> style_sheet_container = MakeShared<StyleSheetContainer>();
@@ -521,21 +592,25 @@ SharedPtr<StyleSheetContainer> Factory::InstanceStyleSheetStream(Stream* stream)
 	return nullptr;
 }
 
+// Clears the style sheet cache. This will force style sheets to be reloaded.
 void Factory::ClearStyleSheetCache()
 {
 	StyleSheetFactory::ClearStyleSheetCache();
 }
 
+/// Clears the template cache. This will force templates to be reloaded.
 void Factory::ClearTemplateCache()
 {
 	TemplateCache::Clear();
 }
 
+// Registers an instancer for all RmlEvents
 void Factory::RegisterEventInstancer(EventInstancer* instancer)
 {
 	event_instancer = instancer;
 }
 
+// Instance an event object.
 EventPtr Factory::InstanceEvent(Element* target, EventId id, const String& type, const Dictionary& parameters, bool interruptible)
 {
 	EventPtr event = event_instancer->InstanceEvent(target, id, type, parameters, interruptible);
@@ -544,11 +619,13 @@ EventPtr Factory::InstanceEvent(Element* target, EventId id, const String& type,
 	return event;
 }
 
+// Register an instancer for all event listeners
 void Factory::RegisterEventListenerInstancer(EventListenerInstancer* instancer)
 {
 	event_listener_instancer = instancer;
 }
 
+// Instance an event listener with the given string
 EventListener* Factory::InstanceEventListener(const String& value, Element* element)
 {
 	// If we have an event listener instancer, use it
@@ -571,7 +648,7 @@ void Factory::RegisterDataViewInstancer(DataViewInstancer* instancer, const Stri
 	{
 		inserted = data_view_instancers.emplace(name, instancer).second;
 	}
-
+	
 	if (!inserted)
 		Log::Message(Log::LT_WARNING, "Could not register data view instancer '%s'. The given name is already registered.", name.c_str());
 }

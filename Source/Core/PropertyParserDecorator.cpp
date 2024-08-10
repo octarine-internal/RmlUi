@@ -4,7 +4,7 @@
  * For the latest information, see http://github.com/mikke89/RmlUi
  *
  * Copyright (c) 2008-2010 CodePoint Ltd, Shift Technology Ltd
- * Copyright (c) 2019-2023 The RmlUi Team, and contributors
+ * Copyright (c) 2019 The RmlUi Team, and contributors
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -35,18 +35,26 @@
 
 namespace Rml {
 
-PropertyParserDecorator::PropertyParserDecorator() {}
+PropertyParserDecorator::PropertyParserDecorator() :
+	area_keywords{
+		{"border-box", BoxArea::Border},
+		{"padding-box", BoxArea::Padding},
+		{"content-box", BoxArea::Content},
+	}
+{}
 
 PropertyParserDecorator::~PropertyParserDecorator() {}
 
-bool PropertyParserDecorator::ParseValue(Property& property, const String& decorator_string_value, const ParameterMap& /*parameters*/) const
+bool PropertyParserDecorator::ParseValue(Property& property, const String& decorator_string_value, const ParameterMap& parameters) const
 {
 	// Decorators are declared as
 	//   decorator: <decorator-value>[, <decorator-value> ...];
 	// Where <decorator-value> is either a @decorator name:
-	//   decorator: invader-theme-background, ...;
+	//   decorator: invader-theme-background <paint-area>?, ...;
 	// or is an anonymous decorator with inline properties
-	//   decorator: tiled-box( <shorthand properties> ), ...;
+	//   decorator: tiled-box( <shorthand properties> ) <paint-area>?, ...;
+	// where <paint-area> is one of
+	//   border-box, padding-box, content-box
 
 	if (decorator_string_value.empty() || decorator_string_value == "none")
 	{
@@ -57,9 +65,43 @@ bool PropertyParserDecorator::ParseValue(Property& property, const String& decor
 
 	RMLUI_ZoneScoped;
 
+	DecoratorClass decorator_class = DecoratorClass::Image;
+	BoxArea default_paint_area = BoxArea::Auto;
+	bool paint_area_configurable = false;
+	char list_delimiter = ',';
+
+	const String& parser_type = parameters.empty() ? String("background") : parameters.begin()->first;
+
+	if (parser_type == "background")
+	{
+		default_paint_area = BoxArea::Padding;
+		paint_area_configurable = true;
+	}
+	else if (parser_type == "mask-image")
+	{
+		default_paint_area = BoxArea::Border;
+		paint_area_configurable = true;
+	}
+	else if (parser_type  == "filter")
+	{
+		decorator_class = DecoratorClass::Filter;
+		list_delimiter = ' ';
+	}
+	else if (parser_type  == "backdrop-filter")
+	{
+		decorator_class = DecoratorClass::Filter;
+		list_delimiter = ' ';
+		default_paint_area = BoxArea::Border;
+	}
+	else
+	{
+		RMLUI_ERRORMSG("Invalid decorator parser parameter.");
+		return false;
+	}
+
 	// Make sure we don't split inside the parenthesis since they may appear in decorator shorthands.
 	StringList decorator_string_list;
-	StringUtilities::ExpandString(decorator_string_list, decorator_string_value, ',', '(', ')');
+	StringUtilities::ExpandString(decorator_string_list, decorator_string_value, list_delimiter, '(', ')', true);
 
 	DecoratorDeclarationList decorators;
 	decorators.value = decorator_string_value;
@@ -72,10 +114,35 @@ bool PropertyParserDecorator::ParseValue(Property& property, const String& decor
 		const size_t shorthand_close = decorator_string.rfind(')');
 		const bool invalid_parenthesis = (shorthand_open == String::npos || shorthand_close == String::npos || shorthand_open >= shorthand_close);
 
+		// Find the paint area for the decorator.
+		BoxArea paint_area = default_paint_area;
+
+		// Look-up keywords for customized paint area.
+		{
+			const size_t keywords_begin = (invalid_parenthesis ? decorator_string.find(' ') : shorthand_close + 1);
+			StringList keywords;
+			if (keywords_begin < decorator_string.size())
+				StringUtilities::ExpandString(keywords, decorator_string.substr(keywords_begin), ' ');
+
+			for (const String& keyword : keywords)
+			{
+				if (keyword.empty())
+					continue;
+				if (!paint_area_configurable)
+					return false; // Trying to use a paint area/keyword on a property type that does not support it.
+
+				auto it = area_keywords.find(StringUtilities::ToLower(keyword));
+				if (it == area_keywords.end())
+					return false; // Bail out if we have an invalid keyword.
+
+				paint_area = it->second;
+			}
+		}
+
 		if (invalid_parenthesis)
 		{
 			// We found no parenthesis, that means the value must be a name of a @decorator rule.
-			decorators.list.emplace_back(DecoratorDeclaration{decorator_string, nullptr, {}});
+			decorators.list.emplace_back(DecoratorDeclaration{decorator_string, nullptr, {}, paint_area});
 		}
 		else
 		{
@@ -90,6 +157,12 @@ bool PropertyParserDecorator::ParseValue(Property& property, const String& decor
 				return false;
 			}
 
+			if (instancer->GetDecoratorClass() != decorator_class)
+			{
+				Log::Message(Log::LT_WARNING, "Decorator type '%s' used in unsupported property.", type.c_str());
+				return false;
+			}
+
 			const String shorthand = decorator_string.substr(shorthand_open + 1, shorthand_close - shorthand_open - 1);
 			const PropertySpecification& specification = instancer->GetPropertySpecification();
 
@@ -97,15 +170,13 @@ bool PropertyParserDecorator::ParseValue(Property& property, const String& decor
 			PropertyDictionary properties;
 			if (!specification.ParsePropertyDeclaration(properties, "decorator", shorthand))
 			{
-				// Empty values are allowed in decorators, if the value is not empty we must have encountered a parser error.
-				if (!StringUtilities::StripWhitespace(shorthand).empty())
-					return false;
+				return false;
 			}
 
 			// Set unspecified values to their defaults
 			specification.SetPropertyDefaults(properties);
 
-			decorators.list.emplace_back(DecoratorDeclaration{type, instancer, std::move(properties)});
+			decorators.list.emplace_back(DecoratorDeclaration{type, instancer, std::move(properties), paint_area});
 		}
 	}
 

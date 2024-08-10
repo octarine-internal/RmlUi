@@ -4,7 +4,7 @@
  * For the latest information, see http://github.com/mikke89/RmlUi
  *
  * Copyright (c) 2008-2010 CodePoint Ltd, Shift Technology Ltd
- * Copyright (c) 2019-2023 The RmlUi Team, and contributors
+ * Copyright (c) 2019 The RmlUi Team, and contributors
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -15,7 +15,7 @@
  *
  * The above copyright notice and this permission notice shall be included in
  * all copies or substantial portions of the Software.
- *
+ * 
  * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
  * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
  * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -44,24 +44,45 @@ using CornerSizes = Array<float, 4>;
 using CornerSizes2 = Array<Vector2f, 4>;
 using CornerPositions = Array<Vector2f, 4>;
 
+// The background-border metrics specify an inner and an outer rectangular area, whose corners can be rounded.
+struct BorderMetrics {
+	// Outer corner positions (e.g. at border edge)
+	CornerPositions positions_outer;
+	// Inner corner positions (e.g. at padding edge)
+	CornerPositions positions_inner;
+	// Curved borders are drawn as circles (outer border) and ellipses (inner border) around the centers.
+	CornerPositions positions_circle_center;
+
+	// Radii of the outer edges, always circles.
+	CornerSizes outer_radii;
+	// Radii of the inner edges, 2-dimensional as these can be elliptic.
+	// The inner radii is effectively the (signed) distance from the circle center to the inner edge.
+	// They can also be zero or negative, in which case a sharp corner should be drawn instead of an arc.
+	CornerSizes2 inner_radii;
+};
+
 class GeometryBackgroundBorder {
 public:
-	/// Generate geometry for background and borders.
-	/// @param[out] vertices Destination vector for generated vertices.
-	/// @param[out] indices Destination vector for generated indices.
-	/// @param[in] radii The radius of each corner.
-	/// @param[in] box The box used for positioning and sizing of the background and borders.
-	/// @param[in] offset Offset the position of the generated vertices.
-	/// @param[in] background_color Color of the background, set alpha to zero to not generate a background.
-	/// @param[in] border_colors Pointer to a four-element array of border colors in top-right-bottom-left order, or nullptr to not generate borders.
-	static void Draw(Vector<Vertex>& vertices, Vector<int>& indices, CornerSizes radii, const Box& box, Vector2f offset, Colourb background_color,
-		const Colourb* border_colors);
+	// Construct the background-border geometry drawer, passing in the target vertex and index lists to be filled by later draw operations.
+	GeometryBackgroundBorder(Vector<Vertex>& vertices, Vector<int>& indices);
+
+	/// Compute background-border metrics used by later draw operations.
+	/// @param outer_position Top-left position of the outer edge.
+	/// @param edge_sizes Widths of the border.
+	/// @param inner_size Size of the inner area.
+	/// @param outer_radii The radius of the outer edge at each corner.
+	/// @return The computed metrics.
+	static BorderMetrics ComputeBorderMetrics(Vector2f outer_position, EdgeSizes edge_sizes, Vector2f inner_size, Vector4f outer_radii);
+
+	// Generate geometry for the background, defined by the inner area of the border metrics.
+	void DrawBackground(const BorderMetrics& metrics, Colourb color);
+
+	/// Generate geometry for the border, defined by the intersection of the outer and inner areas of the border metrics.
+	void DrawBorder(const BorderMetrics& metrics, EdgeSizes edge_sizes, const Colourb border_colors[4]);
 
 private:
 	enum Edge { TOP, RIGHT, BOTTOM, LEFT };
 	enum Corner { TOP_LEFT, TOP_RIGHT, BOTTOM_RIGHT, BOTTOM_LEFT };
-
-	GeometryBackgroundBorder(Vector<Vertex>& vertices, Vector<int>& indices);
 
 	// -- Background --
 	// All draw operations place vertices in clockwise order.
@@ -72,12 +93,12 @@ private:
 	// Add a single point.
 	void DrawPoint(Vector2f pos, Colourb color);
 
-	// Draw an arc by placing vertices along the ellipse formed by the two-axis radius r, spaced evenly between angles a0,a1 (inclusive). Colors are
-	// interpolated.
+	// Draw an arc by placing vertices along the ellipse formed by the two-axis radius r, spaced evenly between angles a0,a1 (inclusive). Colors are interpolated.
 	void DrawArc(Vector2f pos_center, Vector2f r, float a0, float a1, Colourb color0, Colourb color1, int num_points);
 
 	// Generates triangles by connecting the added vertices.
 	void FillBackground(int index_start);
+
 
 	// -- Border --
 	// All draw operations place the first and last vertices in the following manner.
@@ -89,8 +110,7 @@ private:
 	// Where 'next' corner means along the clockwise direction. This way we can easily fill the triangles of the edges in FillEdge().
 
 	// Draw the corner, delegate to the specific corner shape drawing function.
-	void DrawBorderCorner(Corner corner, Vector2f pos_outer, Vector2f pos_inner, Vector2f pos_circle_center, float R, Vector2f r, Colourb color0,
-		Colourb color1);
+	void DrawBorderCorner(Corner corner, Vector2f pos_outer, Vector2f pos_inner, Vector2f pos_circle_center, float R, Vector2f r, Colourb color0, Colourb color1);
 
 	// Draw a sharp border corner, ie. no border-radius. Does not produce any triangles.
 	void DrawPointPoint(Vector2f pos_outer, Vector2f pos_inner, Colourb color0, Colourb color1);
@@ -104,6 +124,7 @@ private:
 
 	// Add triangles between the previous corner to another one specified by the index (possibly yet-to-be-drawn).
 	void FillEdge(int index_next_corner);
+
 
 	// -- Tools --
 	int GetNumPoints(float R) const;

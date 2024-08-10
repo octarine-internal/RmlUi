@@ -4,7 +4,7 @@
  * For the latest information, see http://github.com/mikke89/RmlUi
  *
  * Copyright (c) 2008-2010 CodePoint Ltd, Shift Technology Ltd
- * Copyright (c) 2019-2023 The RmlUi Team, and contributors
+ * Copyright (c) 2019 The RmlUi Team, and contributors
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -35,23 +35,12 @@ class RenderInterface_GL2 : public Rml::RenderInterface {
 public:
 	RenderInterface_GL2();
 
-	// The viewport should be updated whenever the window size changes.
-	void SetViewport(int viewport_width, int viewport_height);
-
-	// Sets up OpenGL states for taking rendering commands from RmlUi.
-	void BeginFrame();
-	void EndFrame();
-
-	// Optional, can be used to clear the framebuffer.
-	void Clear();
-
-	// -- Inherited from Rml::RenderInterface --
-
 	void RenderGeometry(Rml::Vertex* vertices, int num_vertices, int* indices, int num_indices, Rml::TextureHandle texture,
 		const Rml::Vector2f& translation) override;
 
 	void EnableScissorRegion(bool enable) override;
 	void SetScissorRegion(int x, int y, int width, int height) override;
+	bool ExecuteStencilCommand(Rml::StencilCommand command, int value, int mask) override;
 
 	bool LoadTexture(Rml::TextureHandle& texture_handle, Rml::Vector2i& texture_dimensions, const Rml::String& source) override;
 	bool GenerateTexture(Rml::TextureHandle& texture_handle, const Rml::byte* source, const Rml::Vector2i& source_dimensions) override;
@@ -59,13 +48,21 @@ public:
 
 	void SetTransform(const Rml::Matrix4f* transform) override;
 
-	// Can be passed to RenderGeometry() to enable texture rendering without changing the bound texture.
-	static const Rml::TextureHandle TextureEnableWithoutBinding = Rml::TextureHandle(-1);
-
-private:
-	int viewport_width = 0;
-	int viewport_height = 0;
-	bool transform_enabled = false;
+	static const Rml::TextureHandle TextureIgnoreBinding = Rml::TextureHandle(-1);
 };
+
+namespace RmlGL2 {
+
+void Initialize();
+void Shutdown();
+
+void SetViewport(int width, int height);
+
+void BeginFrame();
+void EndFrame();
+
+void Clear();
+
+} // namespace RmlGL2
 
 #endif

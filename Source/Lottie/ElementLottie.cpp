@@ -4,7 +4,7 @@
  * For the latest information, see http://github.com/mikke89/RmlUi
  *
  * Copyright (c) 2008-2010 CodePoint Ltd, Shift Technology Ltd
- * Copyright (c) 2019-2023 The RmlUi Team, and contributors
+ * Copyright (c) 2019 The RmlUi Team, and contributors
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -28,7 +28,6 @@
 
 #include "../../Include/RmlUi/Lottie/ElementLottie.h"
 #include "../../Include/RmlUi/Core/ComputedValues.h"
-#include "../../Include/RmlUi/Core/Context.h"
 #include "../../Include/RmlUi/Core/Core.h"
 #include "../../Include/RmlUi/Core/ElementDocument.h"
 #include "../../Include/RmlUi/Core/FileInterface.h"
@@ -41,9 +40,14 @@
 
 namespace Rml {
 
-ElementLottie::ElementLottie(const String& tag) : Element(tag) {}
 
-ElementLottie::~ElementLottie() {}
+ElementLottie::ElementLottie(const String& tag) : Element(tag), geometry(this)
+{
+}
+
+ElementLottie::~ElementLottie()
+{
+}
 
 bool ElementLottie::GetIntrinsicDimensions(Vector2f& dimensions, float& ratio)
 {
@@ -55,29 +59,6 @@ bool ElementLottie::GetIntrinsicDimensions(Vector2f& dimensions, float& ratio)
 		ratio = dimensions.x / dimensions.y;
 
 	return true;
-}
-
-void ElementLottie::OnUpdate()
-{
-	if (animation_dirty)
-		LoadAnimation();
-
-	if (!animation)
-		return;
-
-	const auto t = GetSystemInterface()->GetElapsedTime();
-
-	if (time_animation_start < 0.0)
-		time_animation_start = t;
-
-	double _unused;
-	const double frame_duration = 1.0 / animation->frameRate();
-	const double delay = std::modf((t - time_animation_start) / frame_duration, &_unused) * frame_duration;
-	if (IsVisible(true))
-	{
-		if (Context* ctx = GetContext())
-			ctx->RequestNextUpdate(delay);
-	}
 }
 
 void ElementLottie::OnRender()
@@ -113,8 +94,8 @@ void ElementLottie::OnPropertyChange(const PropertyIdSet& changed_properties)
 {
 	Element::OnPropertyChange(changed_properties);
 
-	if (changed_properties.Contains(PropertyId::ImageColor) || changed_properties.Contains(PropertyId::Opacity))
-	{
+	if (changed_properties.Contains(PropertyId::ImageColor) ||
+		changed_properties.Contains(PropertyId::Opacity)) {
 		geometry_dirty = true;
 	}
 }
@@ -123,15 +104,15 @@ void ElementLottie::GenerateGeometry()
 {
 	geometry.Release(true);
 
-	Vector<Vertex>& vertices = geometry.GetVertices();
-	Vector<int>& indices = geometry.GetIndices();
+	Vector< Vertex >& vertices = geometry.GetVertices();
+	Vector< int >& indices = geometry.GetIndices();
 
 	vertices.resize(4);
 	indices.resize(6);
 
 	Vector2f texcoords[2] = {
 		{0.0f, 0.0f},
-		{1.0f, 1.0f},
+		{1.0f, 1.0f}
 	};
 
 	const ComputedValues& computed = GetComputedValues();
@@ -203,6 +184,9 @@ void ElementLottie::UpdateTexture()
 
 	const double t = GetSystemInterface()->GetElapsedTime();
 
+	if (time_animation_start < 0.0)
+		time_animation_start = t;
+
 	// Find the next animation frame to display.
 	// Here it is possible to add more logic to control playback speed, pause/resume, and more.
 	double _unused;
@@ -233,7 +217,7 @@ void ElementLottie::UpdateTexture()
 		const size_t total_bytes = bytes_per_line * render_dimensions.y;
 		byte* p_data = texture_data.get();
 
-		rlottie::Surface surface(reinterpret_cast<uint32_t*>(p_data), render_dimensions.x, render_dimensions.y, bytes_per_line);
+		rlottie::Surface surface(reinterpret_cast<std::uint32_t*>(p_data), render_dimensions.x, render_dimensions.y, bytes_per_line);
 		animation->renderSync(next_frame, surface);
 
 		// Swizzle the channel order from rlottie's BGRA to RmlUi's RGBA, and change pre-multiplied to post-multiplied alpha.

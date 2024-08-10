@@ -4,7 +4,7 @@
  * For the latest information, see http://github.com/mikke89/RmlUi
  *
  * Copyright (c) 2008-2010 CodePoint Ltd, Shift Technology Ltd
- * Copyright (c) 2019-2023 The RmlUi Team, and contributors
+ * Copyright (c) 2019 The RmlUi Team, and contributors
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -31,7 +31,10 @@
 #include "RmlUi_Renderer_GL2.h"
 #include <RmlUi/Core/Context.h>
 #include <RmlUi/Core/Core.h>
+#include <RmlUi/Core/ElementDocument.h>
 #include <RmlUi/Core/FileInterface.h>
+#include <RmlUi/Core/StringUtilities.h>
+#include <RmlUi/Debugger/Debugger.h>
 #include <GL/glew.h>
 #include <SDL.h>
 #include <SDL_image.h>
@@ -40,175 +43,196 @@
 	#error "Only the OpenGL SDL backend is supported."
 #endif
 
-/**
-    Custom render interface example for the SDL/GL2 backend.
+class RenderInterface_GL2_SDL;
 
-    Overloads the OpenGL2 render interface to load textures through SDL_image's built-in texture loading functionality.
- */
+static SDL_Renderer* renderer = nullptr;
+static SDL_GLContext glcontext = nullptr;
+
+static Rml::Context* context = nullptr;
+static int window_width = 0;
+static int window_height = 0;
+static bool running = false;
+
+static Rml::UniquePtr<RenderInterface_GL2_SDL> render_interface;
+static Rml::UniquePtr<SystemInterface_SDL> system_interface;
+
+static void ProcessKeyDown(SDL_Event& event, Rml::Input::KeyIdentifier key_identifier, const int key_modifier_state);
+
 class RenderInterface_GL2_SDL : public RenderInterface_GL2 {
-private:
-	SDL_Renderer* renderer;
-
 public:
-	RenderInterface_GL2_SDL(SDL_Renderer* renderer) : renderer(renderer) {}
+	RenderInterface_GL2_SDL() {}
 
 	void RenderGeometry(Rml::Vertex* vertices, int num_vertices, int* indices, int num_indices, Rml::TextureHandle texture,
-		const Rml::Vector2f& translation) override
+		const Rml::Vector2f& translation) override;
+
+	bool LoadTexture(Rml::TextureHandle& texture_handle, Rml::Vector2i& texture_dimensions, const Rml::String& source) override;
+	bool GenerateTexture(Rml::TextureHandle& texture_handle, const Rml::byte* source, const Rml::Vector2i& source_dimensions) override;
+	void ReleaseTexture(Rml::TextureHandle texture_handle) override;
+};
+
+void RenderInterface_GL2_SDL::RenderGeometry(Rml::Vertex* vertices, int num_vertices, int* indices, int num_indices, Rml::TextureHandle texture,
+	const Rml::Vector2f& translation)
+{
+	SDL_Texture* sdl_texture = (SDL_Texture*)texture;
+	if (sdl_texture)
 	{
-		SDL_Texture* sdl_texture = (SDL_Texture*)texture;
-		if (sdl_texture)
-		{
-			SDL_GL_BindTexture(sdl_texture, nullptr, nullptr);
-			texture = RenderInterface_GL2::TextureEnableWithoutBinding;
-		}
-
-		RenderInterface_GL2::RenderGeometry(vertices, num_vertices, indices, num_indices, texture, translation);
-
-		if (sdl_texture)
-			SDL_GL_UnbindTexture(sdl_texture);
+		SDL_GL_BindTexture(sdl_texture, nullptr, nullptr);
+		texture = RenderInterface_GL2::TextureIgnoreBinding;
 	}
 
-	bool LoadTexture(Rml::TextureHandle& texture_handle, Rml::Vector2i& texture_dimensions, const Rml::String& source) override
+	RenderInterface_GL2::RenderGeometry(vertices, num_vertices, indices, num_indices, texture, translation);
+
+	if (sdl_texture)
 	{
-		Rml::FileInterface* file_interface = Rml::GetFileInterface();
-		Rml::FileHandle file_handle = file_interface->Open(source);
-		if (!file_handle)
-			return false;
+		SDL_GL_UnbindTexture(sdl_texture);
+	}
+}
 
-		file_interface->Seek(file_handle, 0, SEEK_END);
-		size_t buffer_size = file_interface->Tell(file_handle);
-		file_interface->Seek(file_handle, 0, SEEK_SET);
+bool RenderInterface_GL2_SDL::LoadTexture(Rml::TextureHandle& texture_handle, Rml::Vector2i& texture_dimensions, const Rml::String& source)
+{
+	Rml::FileInterface* file_interface = Rml::GetFileInterface();
+	Rml::FileHandle file_handle = file_interface->Open(source);
+	if (!file_handle)
+		return false;
 
-		Rml::UniquePtr<char[]> buffer(new char[buffer_size]);
-		file_interface->Read(buffer.get(), buffer_size, file_handle);
-		file_interface->Close(file_handle);
+	file_interface->Seek(file_handle, 0, SEEK_END);
+	size_t buffer_size = file_interface->Tell(file_handle);
+	file_interface->Seek(file_handle, 0, SEEK_SET);
 
-		const size_t i = source.rfind('.');
-		Rml::String extension = (i == Rml::String::npos ? Rml::String() : source.substr(i + 1));
+	char* buffer = new char[buffer_size];
+	file_interface->Read(buffer, buffer_size, file_handle);
+	file_interface->Close(file_handle);
 
-		SDL_Surface* surface = IMG_LoadTyped_RW(SDL_RWFromMem(buffer.get(), int(buffer_size)), 1, extension.c_str());
-		if (!surface)
-			return false;
+	const size_t i = source.rfind('.');
+	Rml::String extension = (i == Rml::String::npos ? Rml::String() : source.substr(i + 1));
 
-		if (surface->format->Amask == 0)
-		{
-			// Fix for rendering images with no alpha channel, see https://github.com/mikke89/RmlUi/issues/239
-			SDL_Surface* converted_surface = SDL_ConvertSurfaceFormat(surface, SDL_PixelFormatEnum::SDL_PIXELFORMAT_RGBA32, 0);
-			SDL_FreeSurface(surface);
+	SDL_Surface* surface = IMG_LoadTyped_RW(SDL_RWFromMem(buffer, int(buffer_size)), 1, extension.c_str());
 
-			if (!converted_surface)
-				return false;
+	bool success = false;
 
-			surface = converted_surface;
-		}
-
+	if (surface)
+	{
 		SDL_Texture* texture = SDL_CreateTextureFromSurface(renderer, surface);
+
 		if (texture)
 		{
 			texture_handle = (Rml::TextureHandle)texture;
 			texture_dimensions = Rml::Vector2i(surface->w, surface->h);
+			success = true;
 		}
 
 		SDL_FreeSurface(surface);
-
-		return true;
 	}
 
-	bool GenerateTexture(Rml::TextureHandle& texture_handle, const Rml::byte* source, const Rml::Vector2i& source_dimensions) override
-	{
+	delete[] buffer;
+
+	return success;
+}
+
+bool RenderInterface_GL2_SDL::GenerateTexture(Rml::TextureHandle& texture_handle, const Rml::byte* source, const Rml::Vector2i& source_dimensions)
+{
 #if SDL_BYTEORDER == SDL_BIG_ENDIAN
-		Uint32 rmask = 0xff000000;
-		Uint32 gmask = 0x00ff0000;
-		Uint32 bmask = 0x0000ff00;
-		Uint32 amask = 0x000000ff;
+	Uint32 rmask = 0xff000000;
+	Uint32 gmask = 0x00ff0000;
+	Uint32 bmask = 0x0000ff00;
+	Uint32 amask = 0x000000ff;
 #else
-		Uint32 rmask = 0x000000ff;
-		Uint32 gmask = 0x0000ff00;
-		Uint32 bmask = 0x00ff0000;
-		Uint32 amask = 0xff000000;
+	Uint32 rmask = 0x000000ff;
+	Uint32 gmask = 0x0000ff00;
+	Uint32 bmask = 0x00ff0000;
+	Uint32 amask = 0xff000000;
 #endif
 
-		SDL_Surface* surface = SDL_CreateRGBSurfaceFrom((void*)source, source_dimensions.x, source_dimensions.y, 32, source_dimensions.x * 4, rmask,
-			gmask, bmask, amask);
-		SDL_Texture* texture = SDL_CreateTextureFromSurface(renderer, surface);
-		SDL_SetTextureBlendMode(texture, SDL_BLENDMODE_BLEND);
-		SDL_FreeSurface(surface);
-		texture_handle = (Rml::TextureHandle)texture;
-		return true;
-	}
+	SDL_Surface* surface =
+		SDL_CreateRGBSurfaceFrom((void*)source, source_dimensions.x, source_dimensions.y, 32, source_dimensions.x * 4, rmask, gmask, bmask, amask);
+	SDL_Texture* texture = SDL_CreateTextureFromSurface(renderer, surface);
+	SDL_SetTextureBlendMode(texture, SDL_BLENDMODE_BLEND);
+	SDL_FreeSurface(surface);
+	texture_handle = (Rml::TextureHandle)texture;
+	return true;
+}
 
-	void ReleaseTexture(Rml::TextureHandle texture_handle) override { SDL_DestroyTexture((SDL_Texture*)texture_handle); }
-};
-
-/**
-    Global data used by this backend.
-
-    Lifetime governed by the calls to Backend::Initialize() and Backend::Shutdown().
- */
-struct BackendData {
-	BackendData(SDL_Renderer* renderer) : render_interface(renderer) {}
-
-	SystemInterface_SDL system_interface;
-	RenderInterface_GL2_SDL render_interface;
-
-	SDL_Window* window = nullptr;
-	SDL_Renderer* renderer = nullptr;
-	SDL_GLContext glcontext = nullptr;
-
-	bool running = true;
-};
-static Rml::UniquePtr<BackendData> data;
-
-bool Backend::Initialize(const char* window_name, int width, int height, bool allow_resize)
+void RenderInterface_GL2_SDL::ReleaseTexture(Rml::TextureHandle texture_handle)
 {
-	RMLUI_ASSERT(!data);
+	SDL_DestroyTexture((SDL_Texture*)texture_handle);
+}
 
-	if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS | SDL_INIT_TIMER) != 0)
+static void UpdateWindowDimensions(int width = 0, int height = 0)
+{
+	if (width > 0)
+		window_width = width;
+	if (height > 0)
+		window_height = height;
+	if (context)
+		context->SetDimensions(Rml::Vector2i(window_width, window_height));
+
+	RmlGL2::SetViewport(window_width, window_height);
+}
+
+bool Backend::InitializeInterfaces()
+{
+	RMLUI_ASSERT(!system_interface && !render_interface);
+
+	system_interface = Rml::MakeUnique<SystemInterface_SDL>();
+	Rml::SetSystemInterface(system_interface.get());
+
+	render_interface = Rml::MakeUnique<RenderInterface_GL2_SDL>();
+	Rml::SetRenderInterface(render_interface.get());
+
+	return true;
+}
+
+void Backend::ShutdownInterfaces()
+{
+	render_interface.reset();
+	system_interface.reset();
+}
+
+bool Backend::OpenWindow(const char* name, int width, int height, bool allow_resize)
+{
+	if (!RmlSDL::Initialize())
 		return false;
-
-	// Submit click events when focusing the window.
-	SDL_SetHint(SDL_HINT_MOUSE_FOCUS_CLICKTHROUGH, "1");
 
 	// Request stencil buffer of at least 8-bit size to supporting clipping on transformed elements.
 	SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 8);
-	SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
 
 	// Enable linear filtering and MSAA for better-looking visuals, especially when transforms are applied.
 	SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "linear");
 	SDL_GL_SetAttribute(SDL_GL_MULTISAMPLEBUFFERS, 1);
 	SDL_GL_SetAttribute(SDL_GL_MULTISAMPLESAMPLES, 2);
 
-	const Uint32 window_flags = (SDL_WINDOW_OPENGL | (allow_resize ? SDL_WINDOW_RESIZABLE : 0));
-
-	SDL_Window* window = SDL_CreateWindow(window_name, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, width, height, window_flags);
-	if (!window)
+	const Uint32 window_flags = SDL_WINDOW_OPENGL;
+	SDL_Window* window = nullptr;
+	if (!RmlSDL::CreateWindow(name, width, height, allow_resize, window_flags, window))
 	{
 		// Try again on low-quality settings.
 		SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "nearest");
 		SDL_GL_SetAttribute(SDL_GL_MULTISAMPLEBUFFERS, 0);
 		SDL_GL_SetAttribute(SDL_GL_MULTISAMPLESAMPLES, 0);
-		window = SDL_CreateWindow(window_name, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, width, height, window_flags);
-		if (!window)
+
+		if (!RmlSDL::CreateWindow(name, width, height, allow_resize, window_flags, window))
 		{
 			fprintf(stderr, "SDL error on create window: %s\n", SDL_GetError());
 			return false;
 		}
 	}
 
-	SDL_GLContext glcontext = SDL_GL_CreateContext(window);
-	int opengl_renderer_index = -1;
-	int num_render_drivers = SDL_GetNumRenderDrivers();
-	for (int i = 0; i < num_render_drivers; i++)
+	glcontext = SDL_GL_CreateContext(window);
+	int oglIdx = -1;
+	int nRD = SDL_GetNumRenderDrivers();
+	for (int i = 0; i < nRD; i++)
 	{
 		SDL_RendererInfo info;
-		if (SDL_GetRenderDriverInfo(i, &info) == 0)
+		if (!SDL_GetRenderDriverInfo(i, &info))
 		{
-			if (strcmp(info.name, "opengl") == 0)
-				opengl_renderer_index = i;
+			if (!strcmp(info.name, "opengl"))
+			{
+				oglIdx = i;
+			}
 		}
 	}
 
-	SDL_Renderer* renderer = SDL_CreateRenderer(window, opengl_renderer_index, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
+	renderer = SDL_CreateRenderer(window, oglIdx, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
 	if (!renderer)
 		return false;
 
@@ -219,138 +243,146 @@ bool Backend::Initialize(const char* window_name, int width, int height, bool al
 		return false;
 	}
 
-	data = Rml::MakeUnique<BackendData>(renderer);
+	SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
 
-	data->window = window;
-	data->glcontext = glcontext;
-	data->renderer = renderer;
-
-	data->system_interface.SetWindow(window);
-	data->render_interface.SetViewport(width, height);
+	RmlGL2::Initialize();
+	UpdateWindowDimensions(width, height);
 
 	return true;
 }
 
-void Backend::Shutdown()
+void Backend::CloseWindow()
 {
-	RMLUI_ASSERT(data);
+	RmlGL2::Shutdown();
 
-	SDL_DestroyRenderer(data->renderer);
-	SDL_GL_DeleteContext(data->glcontext);
-	SDL_DestroyWindow(data->window);
+	SDL_DestroyRenderer(renderer);
+	SDL_GL_DeleteContext(glcontext);
 
-	data.reset();
+	renderer = nullptr;
+	glcontext = nullptr;
 
-	SDL_Quit();
+	RmlSDL::CloseWindow();
+	RmlSDL::Shutdown();
 }
 
-Rml::SystemInterface* Backend::GetSystemInterface()
+void Backend::EventLoop(ShellIdleFunction idle_function)
 {
-	RMLUI_ASSERT(data);
-	return &data->system_interface;
-}
+	running = true;
 
-Rml::RenderInterface* Backend::GetRenderInterface()
-{
-	RMLUI_ASSERT(data);
-	return &data->render_interface;
-}
-
-bool Backend::ProcessEvents(Rml::Context* context, KeyDownCallback key_down_callback, bool power_save)
-{
-	RMLUI_ASSERT(data && context);
-
-	bool result = data->running;
-	data->running = true;
-
-	SDL_Event ev;
-	int has_event = 0;
-	if (power_save)
-		has_event = SDL_WaitEventTimeout(&ev, static_cast<int>(Rml::Math::Min(context->GetNextUpdateDelay(), 10.0) * 1000));
-	else
-		has_event = SDL_PollEvent(&ev);
-	while (has_event)
+	while (running)
 	{
-		switch (ev.type)
-		{
-		case SDL_QUIT:
-		{
-			result = false;
-		}
-		break;
-		case SDL_KEYDOWN:
-		{
-			const Rml::Input::KeyIdentifier key = RmlSDL::ConvertKey(ev.key.keysym.sym);
-			const int key_modifier = RmlSDL::GetKeyModifierState();
-			const float native_dp_ratio = 1.f;
+		SDL_Event event;
 
-			// See if we have any global shortcuts that take priority over the context.
-			if (key_down_callback && !key_down_callback(context, key, key_modifier, native_dp_ratio, true))
-				break;
-			// Otherwise, hand the event over to the context by calling the input handler as normal.
-			if (!RmlSDL::InputEventHandler(context, ev))
-				break;
-			// The key was not consumed by the context either, try keyboard shortcuts of lower priority.
-			if (key_down_callback && !key_down_callback(context, key, key_modifier, native_dp_ratio, false))
-				break;
-		}
-		break;
-		case SDL_WINDOWEVENT:
+		while (SDL_PollEvent(&event))
 		{
-			switch (ev.window.event)
+			switch (event.type)
 			{
-			case SDL_WINDOWEVENT_SIZE_CHANGED:
-			{
-				Rml::Vector2i dimensions(ev.window.data1, ev.window.data2);
-				data->render_interface.SetViewport(dimensions.x, dimensions.y);
+			case SDL_QUIT:
+				running = false;
+				break;
+			case SDL_KEYDOWN:
+				// Intercept keydown events to handle global sample shortcuts.
+				ProcessKeyDown(event, RmlSDL::ConvertKey(event.key.keysym.sym), RmlSDL::GetKeyModifierState());
+				break;
+			case SDL_WINDOWEVENT:
+				switch (event.window.event)
+				{
+				case SDL_WINDOWEVENT_SIZE_CHANGED:
+					UpdateWindowDimensions(event.window.data1, event.window.data2);
+					break;
+				}
+				break;
+			default:
+				RmlSDL::EventHandler(event);
+				break;
 			}
-			break;
-			}
-			RmlSDL::InputEventHandler(context, ev);
 		}
-		break;
-		default:
-		{
-			RmlSDL::InputEventHandler(context, ev);
-		}
-		break;
-		}
-		has_event = SDL_PollEvent(&ev);
+
+		idle_function();
 	}
-
-	return result;
 }
 
 void Backend::RequestExit()
 {
-	RMLUI_ASSERT(data);
-
-	data->running = false;
+	running = false;
 }
 
 void Backend::BeginFrame()
 {
-	RMLUI_ASSERT(data);
-
-	SDL_SetRenderDrawColor(data->renderer, 0, 0, 0, 0);
-	SDL_RenderClear(data->renderer);
+	SDL_SetRenderDrawColor(renderer, 0, 0, 0, 0);
+	SDL_RenderClear(renderer);
 
 	// SDL uses shaders that we need to disable here.
 	glUseProgramObjectARB(0);
 	glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
 
-	data->render_interface.BeginFrame();
+	RmlGL2::BeginFrame();
 }
 
 void Backend::PresentFrame()
 {
-	RMLUI_ASSERT(data);
-
-	data->render_interface.EndFrame();
+	RmlGL2::EndFrame();
 
 	// Draw a fake point just outside the screen to let SDL know that it needs to reset its state in case it wants to render a texture next frame.
-	SDL_SetRenderDrawBlendMode(data->renderer, SDL_BLENDMODE_NONE);
-	SDL_RenderDrawPoint(data->renderer, -1, -1);
+	SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE);
+	SDL_RenderDrawPoint(renderer, -1, -1);
 
-	SDL_RenderPresent(data->renderer);
+	SDL_RenderPresent(renderer);
+}
+
+void Backend::SetContext(Rml::Context* new_context)
+{
+	context = new_context;
+	RmlSDL::SetContextForInput(new_context);
+	UpdateWindowDimensions();
+}
+
+static void ProcessKeyDown(SDL_Event& event, Rml::Input::KeyIdentifier key_identifier, const int key_modifier_state)
+{
+	if (!context)
+		return;
+
+	// Toggle debugger and set dp-ratio using Ctrl +/-/0 keys. These global shortcuts take priority.
+	if (key_identifier == Rml::Input::KI_F8)
+	{
+		Rml::Debugger::SetVisible(!Rml::Debugger::IsVisible());
+	}
+	else if (key_identifier == Rml::Input::KI_0 && key_modifier_state & Rml::Input::KM_CTRL)
+	{
+		context->SetDensityIndependentPixelRatio(1.f);
+	}
+	else if (key_identifier == Rml::Input::KI_1 && key_modifier_state & Rml::Input::KM_CTRL)
+	{
+		context->SetDensityIndependentPixelRatio(1.f);
+	}
+	else if (key_identifier == Rml::Input::KI_OEM_MINUS && key_modifier_state & Rml::Input::KM_CTRL)
+	{
+		const float new_dp_ratio = Rml::Math::Max(context->GetDensityIndependentPixelRatio() / 1.2f, 0.5f);
+		context->SetDensityIndependentPixelRatio(new_dp_ratio);
+	}
+	else if (key_identifier == Rml::Input::KI_OEM_PLUS && key_modifier_state & Rml::Input::KM_CTRL)
+	{
+		const float new_dp_ratio = Rml::Math::Min(context->GetDensityIndependentPixelRatio() * 1.2f, 2.5f);
+		context->SetDensityIndependentPixelRatio(new_dp_ratio);
+	}
+	else
+	{
+		// No global shortcuts detected, submit the key to platform handler.
+		if (RmlSDL::EventHandler(event))
+		{
+			// The key was not consumed, check for shortcuts that are of lower priority.
+			if (key_identifier == Rml::Input::KI_R && key_modifier_state & Rml::Input::KM_CTRL)
+			{
+				for (int i = 0; i < context->GetNumDocuments(); i++)
+				{
+					Rml::ElementDocument* document = context->GetDocument(i);
+					const Rml::String& src = document->GetSourceURL();
+					if (src.size() > 4 && src.substr(src.size() - 4) == ".rml")
+					{
+						document->ReloadStyleSheet();
+					}
+				}
+			}
+		}
+	}
 }

@@ -4,7 +4,7 @@
  * For the latest information, see http://github.com/mikke89/RmlUi
  *
  * Copyright (c) 2008-2010 CodePoint Ltd, Shift Technology Ltd
- * Copyright (c) 2019-2023 The RmlUi Team, and contributors
+ * Copyright (c) 2019 The RmlUi Team, and contributors
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -31,246 +31,293 @@
 #include "RmlUi_Renderer_GL2.h"
 #include <RmlUi/Core/Context.h>
 #include <RmlUi/Core/Core.h>
+#include <RmlUi/Core/ElementDocument.h>
 #include <RmlUi/Core/FileInterface.h>
-#include <RmlUi/Core/Profiling.h>
 #include <RmlUi/Debugger/Debugger.h>
 #include <SFML/Graphics.hpp>
 #include <SFML/Window.hpp>
 
-/**
-    Custom render interface example for the SFML/GL2 backend.
+class RenderInterface_GL2_SFML;
 
-    Overloads the OpenGL2 render interface to load textures through SFML's built-in texture loading functionality.
- */
+static Rml::Context* context = nullptr;
+static int window_width = 0;
+static int window_height = 0;
+static bool running = false;
+static sf::RenderWindow* render_window = nullptr;
+
+static Rml::UniquePtr<RenderInterface_GL2_SFML> render_interface;
+static Rml::UniquePtr<SystemInterface_SFML> system_interface;
+
+static void ProcessKeyDown(sf::Event& event, Rml::Input::KeyIdentifier key_identifier, const int key_modifier_state);
+
 class RenderInterface_GL2_SFML : public RenderInterface_GL2 {
 public:
-	// -- Inherited from Rml::RenderInterface --
+	RenderInterface_GL2_SFML() {}
 
 	void RenderGeometry(Rml::Vertex* vertices, int num_vertices, int* indices, int num_indices, Rml::TextureHandle texture,
-		const Rml::Vector2f& translation) override
-	{
-		if (texture)
-		{
-			sf::Texture::bind((sf::Texture*)texture);
-			texture = RenderInterface_GL2::TextureEnableWithoutBinding;
-		}
+		const Rml::Vector2f& translation) override;
 
-		RenderInterface_GL2::RenderGeometry(vertices, num_vertices, indices, num_indices, texture, translation);
-	}
-
-	bool LoadTexture(Rml::TextureHandle& texture_handle, Rml::Vector2i& texture_dimensions, const Rml::String& source) override
-	{
-		Rml::FileInterface* file_interface = Rml::GetFileInterface();
-		Rml::FileHandle file_handle = file_interface->Open(source);
-		if (!file_handle)
-			return false;
-
-		file_interface->Seek(file_handle, 0, SEEK_END);
-		size_t buffer_size = file_interface->Tell(file_handle);
-		file_interface->Seek(file_handle, 0, SEEK_SET);
-
-		char* buffer = new char[buffer_size];
-		file_interface->Read(buffer, buffer_size, file_handle);
-		file_interface->Close(file_handle);
-
-		sf::Texture* texture = new sf::Texture();
-		texture->setSmooth(true);
-
-		bool success = texture->loadFromMemory(buffer, buffer_size);
-
-		delete[] buffer;
-
-		if (success)
-		{
-			texture_handle = (Rml::TextureHandle)texture;
-			texture_dimensions = Rml::Vector2i(texture->getSize().x, texture->getSize().y);
-		}
-		else
-		{
-			delete texture;
-		}
-
-		return success;
-	}
-
-	bool GenerateTexture(Rml::TextureHandle& texture_handle, const Rml::byte* source, const Rml::Vector2i& source_dimensions) override
-	{
-		sf::Texture* texture = new sf::Texture();
-		texture->setSmooth(true);
-
-		if (!texture->create(source_dimensions.x, source_dimensions.y))
-		{
-			delete texture;
-			return false;
-		}
-
-		texture->update(source, source_dimensions.x, source_dimensions.y, 0, 0);
-		texture_handle = (Rml::TextureHandle)texture;
-
-		return true;
-	}
-
-	void ReleaseTexture(Rml::TextureHandle texture_handle) override { delete (sf::Texture*)texture_handle; }
+	bool LoadTexture(Rml::TextureHandle& texture_handle, Rml::Vector2i& texture_dimensions, const Rml::String& source) override;
+	bool GenerateTexture(Rml::TextureHandle& texture_handle, const Rml::byte* source, const Rml::Vector2i& source_dimensions) override;
+	void ReleaseTexture(Rml::TextureHandle texture_handle) override;
 };
 
-// Updates the viewport and context dimensions, should be called whenever the window size changes.
-static void UpdateWindowDimensions(sf::RenderWindow& window, RenderInterface_GL2_SFML& render_interface, Rml::Context* context)
+void RenderInterface_GL2_SFML::RenderGeometry(Rml::Vertex* vertices, int num_vertices, int* indices, int num_indices, Rml::TextureHandle texture,
+	const Rml::Vector2f& translation)
 {
-	const int width = (int)window.getSize().x;
-	const int height = (int)window.getSize().y;
+	if (texture)
+	{
+		sf::Texture::bind((sf::Texture*)texture);
+		texture = RenderInterface_GL2::TextureIgnoreBinding;
+	}
 
-	if (context)
-		context->SetDimensions(Rml::Vector2i(width, height));
-
-	sf::View view(sf::FloatRect(0.f, 0.f, (float)width, (float)height));
-	window.setView(view);
-
-	render_interface.SetViewport(width, height);
+	RenderInterface_GL2::RenderGeometry(vertices, num_vertices, indices, num_indices, texture, translation);
 }
 
-/**
-    Global data used by this backend.
-
-    Lifetime governed by the calls to Backend::Initialize() and Backend::Shutdown().
- */
-struct BackendData {
-	SystemInterface_SFML system_interface;
-	RenderInterface_GL2_SFML render_interface;
-	sf::RenderWindow window;
-	bool running = true;
-};
-static Rml::UniquePtr<BackendData> data;
-
-bool Backend::Initialize(const char* window_name, int width, int height, bool allow_resize)
+bool RenderInterface_GL2_SFML::LoadTexture(Rml::TextureHandle& texture_handle, Rml::Vector2i& texture_dimensions, const Rml::String& source)
 {
-	RMLUI_ASSERT(!data);
+	Rml::FileInterface* file_interface = Rml::GetFileInterface();
+	Rml::FileHandle file_handle = file_interface->Open(source);
+	if (!file_handle)
+		return false;
 
-	data = Rml::MakeUnique<BackendData>();
+	file_interface->Seek(file_handle, 0, SEEK_END);
+	size_t buffer_size = file_interface->Tell(file_handle);
+	file_interface->Seek(file_handle, 0, SEEK_SET);
 
-	// Create the window.
-	sf::RenderWindow out_window;
-	sf::ContextSettings context_settings;
-	context_settings.stencilBits = 8;
-	context_settings.antialiasingLevel = 2;
+	char* buffer = new char[buffer_size];
+	file_interface->Read(buffer, buffer_size, file_handle);
+	file_interface->Close(file_handle);
 
-	const sf::Uint32 style = (allow_resize ? sf::Style::Default : (sf::Style::Titlebar | sf::Style::Close));
+	sf::Texture* texture = new sf::Texture();
+	texture->setSmooth(true);
 
-	data->window.create(sf::VideoMode(width, height), window_name, style, context_settings);
-	data->window.setVerticalSyncEnabled(true);
+	bool success = texture->loadFromMemory(buffer, buffer_size);
 
-	if (!data->window.isOpen())
+	delete[] buffer;
+
+	if (success)
 	{
-		data.reset();
+		texture_handle = (Rml::TextureHandle)texture;
+		texture_dimensions = Rml::Vector2i(texture->getSize().x, texture->getSize().y);
+	}
+	else
+	{
+		delete texture;
+	}
+
+	return success;
+}
+
+bool RenderInterface_GL2_SFML::GenerateTexture(Rml::TextureHandle& texture_handle, const Rml::byte* source, const Rml::Vector2i& source_dimensions)
+{
+	sf::Texture* texture = new sf::Texture();
+	texture->setSmooth(true);
+
+	if (!texture->create(source_dimensions.x, source_dimensions.y))
+	{
+		delete texture;
 		return false;
 	}
 
-	// Optionally apply the SFML window to the system interface so that it can change its mouse cursor.
-	data->system_interface.SetWindow(&data->window);
-
-	UpdateWindowDimensions(data->window, data->render_interface, nullptr);
+	texture->update(source, source_dimensions.x, source_dimensions.y, 0, 0);
+	texture_handle = (Rml::TextureHandle)texture;
 
 	return true;
 }
 
-void Backend::Shutdown()
+void RenderInterface_GL2_SFML::ReleaseTexture(Rml::TextureHandle texture_handle)
 {
-	data.reset();
+	delete (sf::Texture*)texture_handle;
 }
 
-Rml::SystemInterface* Backend::GetSystemInterface()
+static void UpdateWindowDimensions(int width = 0, int height = 0)
 {
-	RMLUI_ASSERT(data);
-	return &data->system_interface;
-}
+	if (width > 0)
+		window_width = width;
+	if (height > 0)
+		window_height = height;
+	if (context)
+		context->SetDimensions(Rml::Vector2i(window_width, window_height));
 
-Rml::RenderInterface* Backend::GetRenderInterface()
-{
-	RMLUI_ASSERT(data);
-	return &data->render_interface;
-}
-
-bool Backend::ProcessEvents(Rml::Context* context, KeyDownCallback key_down_callback, bool power_save)
-{
-	RMLUI_ASSERT(data && context);
-
-	// SFML does not seem to provide a way to wait for events with a timeout.
-	(void)power_save;
-
-	// The contents of this function is intended to be copied directly into your main loop.
-	bool result = data->running;
-	data->running = true;
-
-	sf::Event ev;
-	while (data->window.pollEvent(ev))
+	if (window_width > 0 && window_height > 0)
 	{
-		switch (ev.type)
-		{
-		case sf::Event::Resized: UpdateWindowDimensions(data->window, data->render_interface, context); break;
-		case sf::Event::KeyPressed:
-		{
-			const Rml::Input::KeyIdentifier key = RmlSFML::ConvertKey(ev.key.code);
-			const int key_modifier = RmlSFML::GetKeyModifierState();
-			const float native_dp_ratio = 1.f;
+		sf::View view(sf::FloatRect(0.f, 0.f, (float)window_width, (float)window_height));
+		render_window->setView(view);
 
-			// See if we have any global shortcuts that take priority over the context.
-			if (key_down_callback && !key_down_callback(context, key, key_modifier, native_dp_ratio, true))
-				break;
-			// Otherwise, hand the event over to the context by calling the input handler as normal.
-			if (!RmlSFML::InputHandler(context, ev))
-				break;
-			// The key was not consumed by the context either, try keyboard shortcuts of lower priority.
-			if (key_down_callback && !key_down_callback(context, key, key_modifier, native_dp_ratio, false))
-				break;
-		}
-		break;
-		case sf::Event::Closed: result = false; break;
-		default: RmlSFML::InputHandler(context, ev); break;
-		}
+		RmlGL2::SetViewport(window_width, window_height);
 	}
+}
 
-	return result;
+bool Backend::InitializeInterfaces()
+{
+	RMLUI_ASSERT(!system_interface && !render_interface);
+
+	system_interface = Rml::MakeUnique<SystemInterface_SFML>();
+	Rml::SetSystemInterface(system_interface.get());
+
+	render_interface = Rml::MakeUnique<RenderInterface_GL2_SFML>();
+	Rml::SetRenderInterface(render_interface.get());
+
+	return true;
+}
+
+void Backend::ShutdownInterfaces()
+{
+	render_interface.reset();
+	system_interface.reset();
+}
+
+bool Backend::OpenWindow(const char* name, int width, int height, bool allow_resize)
+{
+	if (!RmlSFML::Initialize())
+		return false;
+
+	if (!RmlSFML::CreateWindow(name, width, height, allow_resize, render_window) || !render_window)
+		return false;
+
+	render_window->setVerticalSyncEnabled(true);
+
+	if (!render_window->isOpen())
+		return false;
+
+	RmlGL2::Initialize();
+	UpdateWindowDimensions(width, height);
+
+	return true;
+}
+
+void Backend::CloseWindow()
+{
+	RmlGL2::Shutdown();
+
+	RmlSFML::CloseWindow();
+	RmlSFML::Shutdown();
+
+	context = nullptr;
+	render_window = nullptr;
+	window_width = 0;
+	window_height = 0;
+}
+
+void Backend::EventLoop(ShellIdleFunction idle_function)
+{
+	running = true;
+	sf::Event event;
+
+	while (running)
+	{
+		while (render_window->pollEvent(event))
+		{
+			switch (event.type)
+			{
+			case sf::Event::Resized:
+				UpdateWindowDimensions(render_window->getSize().x, render_window->getSize().y);
+				break;
+			case sf::Event::KeyPressed:
+				ProcessKeyDown(event, RmlSFML::ConvertKey(event.key.code), RmlSFML::GetKeyModifierState());
+				break;
+			case sf::Event::Closed:
+				running = false;
+				break;
+			default:
+				RmlSFML::EventHandler(event);
+				break;
+			}
+		}
+
+		idle_function();
+	}
 }
 
 void Backend::RequestExit()
 {
-	RMLUI_ASSERT(data);
-	data->running = false;
+	running = false;
 }
 
 void Backend::BeginFrame()
 {
-	RMLUI_ASSERT(data);
-	sf::RenderWindow& window = data->window;
+	render_window->resetGLStates();
+	render_window->clear();
 
-	window.resetGLStates();
-	window.clear();
-
-	data->render_interface.BeginFrame();
+	RmlGL2::BeginFrame();
 
 #if 0
 	// Draw a simple shape with SFML for demonstration purposes. Make sure to push and pop GL states as appropriate.
 	sf::Vector2f circle_position(100.f, 100.f);
 
-	window.pushGLStates();
+	render_window->pushGLStates();
 
 	sf::CircleShape circle(50.f);
 	circle.setPosition(circle_position);
 	circle.setFillColor(sf::Color::Blue);
 	circle.setOutlineColor(sf::Color::Red);
 	circle.setOutlineThickness(10.f);
-	window.draw(circle);
+	render_window->draw(circle);
 
-	window.popGLStates();
+	render_window->popGLStates();
 #endif
 }
 
 void Backend::PresentFrame()
 {
-	RMLUI_ASSERT(data);
+	RmlGL2::EndFrame();
+	render_window->display();
+}
 
-	data->render_interface.EndFrame();
-	data->window.display();
+void Backend::SetContext(Rml::Context* new_context)
+{
+	context = new_context;
+	RmlSFML::SetContextForInput(new_context);
+	UpdateWindowDimensions();
+}
 
-	// Optional, used to mark frames during performance profiling.
-	RMLUI_FrameMark;
+static void ProcessKeyDown(sf::Event& event, Rml::Input::KeyIdentifier key_identifier, const int key_modifier_state)
+{
+	if (!context)
+		return;
+
+	// Toggle debugger and set dp-ratio using Ctrl +/-/0 keys. These global shortcuts take priority.
+	if (key_identifier == Rml::Input::KI_F8)
+	{
+		Rml::Debugger::SetVisible(!Rml::Debugger::IsVisible());
+	}
+	else if (key_identifier == Rml::Input::KI_0 && key_modifier_state & Rml::Input::KM_CTRL)
+	{
+		context->SetDensityIndependentPixelRatio(1.f);
+	}
+	else if (key_identifier == Rml::Input::KI_1 && key_modifier_state & Rml::Input::KM_CTRL)
+	{
+		context->SetDensityIndependentPixelRatio(1.f);
+	}
+	else if ((key_identifier == Rml::Input::KI_OEM_MINUS || key_identifier == Rml::Input::KI_SUBTRACT) && key_modifier_state & Rml::Input::KM_CTRL)
+	{
+		const float new_dp_ratio = Rml::Math::Max(context->GetDensityIndependentPixelRatio() / 1.2f, 0.5f);
+		context->SetDensityIndependentPixelRatio(new_dp_ratio);
+	}
+	else if ((key_identifier == Rml::Input::KI_OEM_PLUS || key_identifier == Rml::Input::KI_ADD) && key_modifier_state & Rml::Input::KM_CTRL)
+	{
+		const float new_dp_ratio = Rml::Math::Min(context->GetDensityIndependentPixelRatio() * 1.2f, 2.5f);
+		context->SetDensityIndependentPixelRatio(new_dp_ratio);
+	}
+	else
+	{
+		// No global shortcuts detected, submit the key to platform handler.
+		if (RmlSFML::EventHandler(event))
+		{
+			// The key was not consumed, check for shortcuts that are of lower priority.
+			if (key_identifier == Rml::Input::KI_R && key_modifier_state & Rml::Input::KM_CTRL)
+			{
+				for (int i = 0; i < context->GetNumDocuments(); i++)
+				{
+					Rml::ElementDocument* document = context->GetDocument(i);
+					const Rml::String& src = document->GetSourceURL();
+					if (src.size() > 4 && src.substr(src.size() - 4) == ".rml")
+					{
+						document->ReloadStyleSheet();
+					}
+				}
+			}
+		}
+	}
 }

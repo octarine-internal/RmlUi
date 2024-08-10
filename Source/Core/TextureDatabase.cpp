@@ -4,7 +4,7 @@
  * For the latest information, see http://github.com/mikke89/RmlUi
  *
  * Copyright (c) 2008-2010 CodePoint Ltd, Shift Technology Ltd
- * Copyright (c) 2019-2023 The RmlUi Team, and contributors
+ * Copyright (c) 2019 The RmlUi Team, and contributors
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -122,44 +122,32 @@ StringList TextureDatabase::GetSourceList()
 	return result;
 }
 
-void TextureDatabase::ReleaseTextures()
+void TextureDatabase::ReleaseTextures(RenderInterface* render_interface)
 {
 	if (texture_database)
 	{
 		for (const auto& texture : texture_database->textures)
-			texture.second->Release();
+			texture.second->Release(render_interface);
 
 		for (const auto& texture : texture_database->callback_textures)
-			texture->Release();
+			texture->Release(render_interface);
 	}
 }
 
-bool TextureDatabase::ReleaseTexture(const String& source)
+bool TextureDatabase::HoldsReferenceToRenderInterface(RenderInterface* render_interface)
 {
-	auto it = texture_database->textures.find(source);
-	if (it != texture_database->textures.end())
+	if (texture_database)
 	{
-		it->second->Release();
-		return true;
+		for (const auto& texture : texture_database->textures)
+			if (texture.second->HoldsRenderInterface(render_interface))
+				return true;
+
+		for (const auto& texture : texture_database->callback_textures)
+			if (texture->HoldsRenderInterface(render_interface))
+				return true;
 	}
 
 	return false;
-}
-
-bool TextureDatabase::AllTexturesReleased()
-{
-	if (texture_database)
-	{
-		for (const auto& texture : texture_database->textures)
-			if (!texture.second->IsLoaded())
-				return false;
-
-		for (const auto& texture : texture_database->callback_textures)
-			if (!texture->IsLoaded())
-				return false;
-	}
-
-	return true;
 }
 
 } // namespace Rml

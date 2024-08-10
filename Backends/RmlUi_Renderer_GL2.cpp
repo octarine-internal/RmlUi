@@ -4,7 +4,7 @@
  * For the latest information, see http://github.com/mikke89/RmlUi
  *
  * Copyright (c) 2008-2010 CodePoint Ltd, Shift Technology Ltd
- * Copyright (c) 2019-2023 The RmlUi Team, and contributors
+ * Copyright (c) 2019 The RmlUi Team, and contributors
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -52,45 +52,10 @@
 
 #define GL_CLAMP_TO_EDGE 0x812F
 
+static int viewport_width = 0;
+static int viewport_height = 0;
+
 RenderInterface_GL2::RenderInterface_GL2() {}
-
-void RenderInterface_GL2::SetViewport(int in_viewport_width, int in_viewport_height)
-{
-	viewport_width = in_viewport_width;
-	viewport_height = in_viewport_height;
-}
-
-void RenderInterface_GL2::BeginFrame()
-{
-	RMLUI_ASSERT(viewport_width >= 0 && viewport_height >= 0);
-	glViewport(0, 0, viewport_width, viewport_height);
-
-	glEnableClientState(GL_VERTEX_ARRAY);
-	glEnableClientState(GL_COLOR_ARRAY);
-	glDisableClientState(GL_TEXTURE_COORD_ARRAY);
-
-	glEnable(GL_BLEND);
-	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-
-	Rml::Matrix4f projection = Rml::Matrix4f::ProjectOrtho(0, (float)viewport_width, (float)viewport_height, 0, -10000, 10000);
-	glMatrixMode(GL_PROJECTION);
-	glLoadMatrixf(projection.data());
-	glMatrixMode(GL_TEXTURE);
-	glLoadIdentity();
-	glMatrixMode(GL_MODELVIEW);
-	glLoadIdentity();
-
-	transform_enabled = false;
-}
-
-void RenderInterface_GL2::EndFrame() {}
-
-void RenderInterface_GL2::Clear()
-{
-	glClearStencil(0);
-	glClearColor(0, 0, 0, 1);
-	glClear(GL_COLOR_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
-}
 
 void RenderInterface_GL2::RenderGeometry(Rml::Vertex* vertices, int /*num_vertices*/, int* indices, int num_indices, const Rml::TextureHandle texture,
 	const Rml::Vector2f& translation)
@@ -110,7 +75,7 @@ void RenderInterface_GL2::RenderGeometry(Rml::Vertex* vertices, int /*num_vertic
 	{
 		glEnable(GL_TEXTURE_2D);
 
-		if (texture != TextureEnableWithoutBinding)
+		if (texture != TextureIgnoreBinding)
 			glBindTexture(GL_TEXTURE_2D, (GLuint)texture);
 
 		glEnableClientState(GL_TEXTURE_COORD_ARRAY);
@@ -125,62 +90,68 @@ void RenderInterface_GL2::RenderGeometry(Rml::Vertex* vertices, int /*num_vertic
 void RenderInterface_GL2::EnableScissorRegion(bool enable)
 {
 	if (enable)
-	{
-		if (!transform_enabled)
-		{
-			glEnable(GL_SCISSOR_TEST);
-			glDisable(GL_STENCIL_TEST);
-		}
-		else
-		{
-			glDisable(GL_SCISSOR_TEST);
-			glEnable(GL_STENCIL_TEST);
-		}
-	}
+		glEnable(GL_SCISSOR_TEST);
 	else
-	{
 		glDisable(GL_SCISSOR_TEST);
-		glDisable(GL_STENCIL_TEST);
-	}
 }
 
 void RenderInterface_GL2::SetScissorRegion(int x, int y, int width, int height)
 {
-	if (!transform_enabled)
+	glScissor(x, viewport_height - (y + height), width, height);
+}
+
+bool RenderInterface_GL2::ExecuteStencilCommand(Rml::StencilCommand command, int value, int mask)
+{
+	RMLUI_ASSERT(value >= 0 && value <= 255 && mask >= 0 && mask <= 255);
+	using Rml::StencilCommand;
+
+	switch (command)
 	{
-		glScissor(x, viewport_height - (y + height), width, height);
-	}
-	else
+	case StencilCommand::Clear:
 	{
-		// clear the stencil buffer
-		glStencilMask(GLuint(-1));
+		RMLUI_ASSERT(value == 0);
+		glEnable(GL_STENCIL_TEST);
+		glStencilMask(GLuint(mask));
 		glClear(GL_STENCIL_BUFFER_BIT);
-
-		// fill the stencil buffer
-		glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
-		glDepthMask(GL_FALSE);
-		glStencilFunc(GL_NEVER, 1, GLuint(-1));
-		glStencilOp(GL_REPLACE, GL_KEEP, GL_KEEP);
-
-		float fx = (float)x;
-		float fy = (float)y;
-		float fwidth = (float)width;
-		float fheight = (float)height;
-
-		// draw transformed quad
-		GLfloat vertices[] = {fx, fy, 0, fx, fy + fheight, 0, fx + fwidth, fy + fheight, 0, fx + fwidth, fy, 0};
-		glDisableClientState(GL_COLOR_ARRAY);
-		glVertexPointer(3, GL_FLOAT, 0, vertices);
-		GLushort indices[] = {1, 2, 0, 3};
-		glDrawElements(GL_TRIANGLE_STRIP, 4, GL_UNSIGNED_SHORT, indices);
-		glEnableClientState(GL_COLOR_ARRAY);
-
-		// prepare for drawing the real thing
-		glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
-		glDepthMask(GL_TRUE);
-		glStencilMask(0);
-		glStencilFunc(GL_EQUAL, 1, GLuint(-1));
 	}
+	break;
+	case StencilCommand::WriteValue:
+	{
+		glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
+		glStencilFunc(GL_ALWAYS, GLint(value), GLuint(-1));
+		glStencilMask(GLuint(mask));
+		glStencilOp(GL_KEEP, GL_KEEP, GL_REPLACE);
+	}
+	break;
+	case StencilCommand::WriteIncrement:
+	{
+		glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
+		glStencilMask(GLuint(mask));
+		glStencilOp(GL_KEEP, GL_KEEP, GL_INCR);
+	}
+	break;
+	case StencilCommand::WriteDisable:
+	{
+		glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+		glStencilMask(0);
+		glStencilOp(GL_KEEP, GL_KEEP, GL_KEEP);
+	}
+	break;
+	case StencilCommand::TestEqual:
+	{
+		glStencilFunc(GL_EQUAL, GLint(value), GLuint(mask));
+	}
+	break;
+	case StencilCommand::TestDisable:
+	{
+		glStencilFunc(GL_ALWAYS, GLint(value), GLuint(mask));
+	}
+	break;
+	case StencilCommand::None:
+		break;
+	}
+
+	return true;
 }
 
 // Set to byte packing, or the compiler will expand our struct, which means it won't read correctly from file
@@ -297,8 +268,8 @@ bool RenderInterface_GL2::GenerateTexture(Rml::TextureHandle& texture_handle, co
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
 	texture_handle = (Rml::TextureHandle)texture_id;
 
@@ -312,8 +283,6 @@ void RenderInterface_GL2::ReleaseTexture(Rml::TextureHandle texture_handle)
 
 void RenderInterface_GL2::SetTransform(const Rml::Matrix4f* transform)
 {
-	transform_enabled = (transform != nullptr);
-
 	if (transform)
 	{
 		if (std::is_same<Rml::Matrix4f, Rml::ColumnMajorMatrix4f>::value)
@@ -323,4 +292,48 @@ void RenderInterface_GL2::SetTransform(const Rml::Matrix4f* transform)
 	}
 	else
 		glLoadIdentity();
+}
+
+void RmlGL2::Initialize() {}
+
+void RmlGL2::Shutdown()
+{
+	viewport_width = 0;
+	viewport_height = 0;
+}
+
+void RmlGL2::SetViewport(int width, int height)
+{
+	viewport_width = width;
+	viewport_height = height;
+}
+
+void RmlGL2::BeginFrame()
+{
+	RMLUI_ASSERT(viewport_width > 0 && viewport_height > 0);
+	glViewport(0, 0, viewport_width, viewport_height);
+
+	glEnableClientState(GL_VERTEX_ARRAY);
+	glEnableClientState(GL_COLOR_ARRAY);
+	glDisableClientState(GL_TEXTURE_COORD_ARRAY);
+
+	glEnable(GL_BLEND);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+	Rml::Matrix4f projection = Rml::Matrix4f::ProjectOrtho(0, (float)viewport_width, (float)viewport_height, 0, -10000, 10000);
+	glMatrixMode(GL_PROJECTION);
+	glLoadMatrixf(projection.data());
+	glMatrixMode(GL_TEXTURE);
+	glLoadIdentity();
+	glMatrixMode(GL_MODELVIEW);
+	glLoadIdentity();
+}
+
+void RmlGL2::EndFrame() {}
+
+void RmlGL2::Clear()
+{
+	glClearStencil(0);
+	glClearColor(0, 0, 0, 1);
+	glClear(GL_COLOR_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
 }

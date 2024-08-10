@@ -4,7 +4,7 @@
  * For the latest information, see http://github.com/mikke89/RmlUi
  *
  * Copyright (c) 2008-2010 CodePoint Ltd, Shift Technology Ltd
- * Copyright (c) 2019-2023 The RmlUi Team, and contributors
+ * Copyright (c) 2019 The RmlUi Team, and contributors
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -15,7 +15,7 @@
  *
  * The above copyright notice and this permission notice shall be included in
  * all copies or substantial portions of the Software.
- *
+ * 
  * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
  * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
  * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -33,41 +33,61 @@
 #include "Vertex.h"
 #include <stdint.h>
 
+// TODO for ClipMask
+#include "RenderInterface.h"
+
 namespace Rml {
 
 class Context;
 class Element;
+class RenderInterface;
 struct Texture;
 using GeometryDatabaseHandle = uint32_t;
 
 /**
-    A helper object for holding an array of vertices and indices, and compiling it as necessary when rendered.
+	A helper object for holding an array of vertices and indices, and compiling it as necessary when rendered.
 
-    @author Peter Curry
+	@author Peter Curry
  */
 
-class RMLUICORE_API Geometry {
+class RMLUICORE_API Geometry
+{
 public:
-	Geometry();
+	Geometry(Element* host_element = nullptr);
+	Geometry(RenderInterface* render_interface);
 
 	Geometry(const Geometry&) = delete;
 	Geometry& operator=(const Geometry&) = delete;
 
-	Geometry(Geometry&& other) noexcept;
-	Geometry& operator=(Geometry&& other) noexcept;
+	Geometry(Geometry&& other);
+	Geometry& operator=(Geometry&& other);
 
 	~Geometry();
+
+	/// Set the host element for this geometry; this should be passed in the constructor if possible.
+	/// @param[in] host_element The new host element for the geometry.
+	void SetHostElement(Element* host_element);
 
 	/// Attempts to compile the geometry if appropriate, then renders the geometry, compiled if it can.
 	/// @param[in] translation The translation of the geometry.
 	void Render(Vector2f translation);
 
+	/// Render the geometry with an applied effect. Requires that the geometry can be compiled.
+	/// @param[in] shader The shader to use for rendering the geometry.
+	/// @param[in] translation The translation of the geometry.
+	void Render(CompiledShaderHandle shader, Vector2f translation);
+
+	/// Use the geometry to set the clip mask through the render interface. Requires that the geometry can be compiled.
+	/// @param[in] clip_mask The clip mask to apply.
+	/// @param[in] translation The translation of the geometry.
+	void RenderToClipMask(ClipMaskOperation clip_mask, Vector2f translation);
+
 	/// Returns the geometry's vertices. If these are written to, Release() should be called to force a recompile.
 	/// @return The geometry's vertex array.
-	Vector<Vertex>& GetVertices();
+	Vector< Vertex >& GetVertices();
 	/// Returns the geometry's indices. If these are written to, Release() should be called to force a recompile.
 	/// @return The geometry's index array.
-	Vector<int>& GetIndices();
+	Vector< int >& GetIndices();
 
 	/// Gets the geometry's texture.
 	/// @return The geometry's texture.
@@ -79,15 +99,21 @@ public:
 	/// @param[in] clear_buffers True to also clear the vertex and index buffers, false to leave intact.
 	void Release(bool clear_buffers = false);
 
+	// Returns the host context's render interface.
+	RenderInterface* GetRenderInterface();
+
 	/// Returns true if there is geometry to be rendered.
 	explicit operator bool() const;
 
 private:
 	// Move members from another geometry.
-	void MoveFrom(Geometry& other) noexcept;
+	void MoveFrom(Geometry& other);
 
-	Vector<Vertex> vertices;
-	Vector<int> indices;
+	RenderInterface* render_interface = nullptr;
+	Element* host_element = nullptr;
+
+	Vector< Vertex > vertices;
+	Vector< int > indices;
 	const Texture* texture = nullptr;
 
 	CompiledGeometryHandle compiled_geometry = 0;
@@ -96,7 +122,7 @@ private:
 	GeometryDatabaseHandle database_handle;
 };
 
-using GeometryList = Vector<Geometry>;
+using GeometryList = Vector< Geometry >;
 
 } // namespace Rml
 #endif

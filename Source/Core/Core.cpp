@@ -4,7 +4,7 @@
  * For the latest information, see http://github.com/mikke89/RmlUi
  *
  * Copyright (c) 2008-2010 CodePoint Ltd, Shift Technology Ltd
- * Copyright (c) 2019-2023 The RmlUi Team, and contributors
+ * Copyright (c) 2019 The RmlUi Team, and contributors
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -15,7 +15,7 @@
  *
  * The above copyright notice and this permission notice shall be included in
  * all copies or substantial portions of the Software.
- *
+ * 
  * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
  * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
  * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -34,9 +34,10 @@
 #include "../../Include/RmlUi/Core/FontEngineInterface.h"
 #include "../../Include/RmlUi/Core/Plugin.h"
 #include "../../Include/RmlUi/Core/RenderInterface.h"
-#include "../../Include/RmlUi/Core/StyleSheetSpecification.h"
 #include "../../Include/RmlUi/Core/SystemInterface.h"
+#include "../../Include/RmlUi/Core/StyleSheetSpecification.h"
 #include "../../Include/RmlUi/Core/Types.h"
+
 #include "EventSpecification.h"
 #include "FileInterfaceDefault.h"
 #include "GeometryDatabase.h"
@@ -45,20 +46,22 @@
 #include "StyleSheetParser.h"
 #include "TemplateCache.h"
 #include "TextureDatabase.h"
+#include "EventSpecification.h"
 
 #ifndef RMLUI_NO_FONT_INTERFACE_DEFAULT
-	#include "FontEngineDefault/FontEngineInterfaceDefault.h"
+#include "FontEngineDefault/FontEngineInterfaceDefault.h"
 #endif
 
 #ifdef RMLUI_ENABLE_LOTTIE_PLUGIN
-	#include "../Lottie/LottiePlugin.h"
+#include "../Lottie/LottiePlugin.h"
 #endif
 
 #ifdef RMLUI_ENABLE_SVG_PLUGIN
-	#include "../SVG/SVGPlugin.h"
+#include "../SVG/SVGPlugin.h"
 #endif
 
 #include "Pool.h"
+
 
 namespace Rml {
 
@@ -77,7 +80,7 @@ static UniquePtr<FontEngineInterface> default_font_interface;
 
 static bool initialised = false;
 
-using ContextMap = UnorderedMap<String, ContextPtr>;
+using ContextMap = UnorderedMap< String, ContextPtr >;
 static ContextMap contexts;
 
 // The ObserverPtrBlock pool
@@ -87,6 +90,7 @@ extern Pool<ObserverPtrBlock>* observerPtrBlockPool;
 	#define RMLUI_VERSION "custom"
 #endif
 
+
 bool Initialise()
 {
 	RMLUI_ASSERTMSG(!initialised, "Rml::Initialise() called, but RmlUi is already initialised!");
@@ -95,18 +99,13 @@ bool Initialise()
 
 	// Check for valid interfaces, or install default interfaces as appropriate.
 	if (!system_interface)
-	{
+	{	
 		Log::Message(Log::LT_ERROR, "No system interface set!");
-		return false;
-	}
-	if (!render_interface)
-	{
-		Log::Message(Log::LT_ERROR, "No render interface set!");
 		return false;
 	}
 
 	if (!file_interface)
-	{
+	{		
 #ifndef RMLUI_NO_FILE_INTERFACE_DEFAULT
 		default_file_interface = MakeUnique<FileInterfaceDefault>();
 		file_interface = default_file_interface.get();
@@ -126,7 +125,7 @@ bool Initialise()
 		default_font_interface = MakeUnique<FontEngineInterfaceDefault>();
 		font_interface = default_font_interface.get();
 #else
-		Log::Message(Log::LT_ERROR, "No font engine interface set!");
+		Log::Message(Log::LT_ERROR, "No font interface set!");
 		return false;
 #endif
 	}
@@ -190,61 +189,71 @@ void Shutdown()
 	ReleaseMemoryPools();
 }
 
+// Returns the version of this RmlUi library.
 String GetVersion()
 {
 	return RMLUI_VERSION;
 }
 
+// Sets the interface through which all RmlUi messages will be routed.
 void SetSystemInterface(SystemInterface* _system_interface)
 {
 	system_interface = _system_interface;
 }
 
+// Returns RmlUi's system interface.
 SystemInterface* GetSystemInterface()
 {
 	return system_interface;
 }
 
+// Sets the interface through which all rendering requests are made.
 void SetRenderInterface(RenderInterface* _render_interface)
 {
-	if (initialised)
-	{
-		Log::Message(Log::LT_ERROR, "The render interface is not allowed to be set or changed after RmlUi has been initialised.");
-		return;
-	}
-
 	render_interface = _render_interface;
 }
 
+// Returns RmlUi's render interface.
 RenderInterface* GetRenderInterface()
 {
 	return render_interface;
 }
 
+// Sets the interface through which all file I/O requests are made.
 void SetFileInterface(FileInterface* _file_interface)
 {
 	file_interface = _file_interface;
 }
 
+// Returns RmlUi's file interface.
 FileInterface* GetFileInterface()
 {
 	return file_interface;
 }
 
+// Sets the interface through which all font requests are made.
 void SetFontEngineInterface(FontEngineInterface* _font_interface)
 {
 	font_interface = _font_interface;
 }
-
+	
+// Returns RmlUi's file interface.
 FontEngineInterface* GetFontEngineInterface()
 {
 	return font_interface;
 }
 
-Context* CreateContext(const String& name, const Vector2i dimensions)
+// Creates a new element context.
+Context* CreateContext(const String& name, const Vector2i dimensions, RenderInterface* custom_render_interface)
 {
 	if (!initialised)
 		return nullptr;
+
+	if (!custom_render_interface && !render_interface)
+	{
+		Log::Message(Log::LT_WARNING, "Failed to create context '%s', no render interface specified and no default render interface exists.", name.c_str());
+		return nullptr;
+	}
 
 	if (GetContext(name))
 	{
@@ -252,7 +261,9 @@ Context* CreateContext(const String& name, const Vector2i dimensions)
 		return nullptr;
 	}
 
-	ContextPtr new_context = Factory::InstanceContext(name);
+	RenderInterface* used_render_interface = (custom_render_interface ? custom_render_interface : render_interface);
+
+	ContextPtr new_context = Factory::InstanceContext(name, used_render_interface);
 	if (!new_context)
 	{
 		Log::Message(Log::LT_WARNING, "Failed to instance context '%s', instancer returned nullptr.", name.c_str());
@@ -280,6 +291,7 @@ bool RemoveContext(const String& name)
 	return false;
 }
 
+// Fetches a previously constructed context by name.
 Context* GetContext(const String& name)
 {
 	ContextMap::iterator i = contexts.find(name);
@@ -289,11 +301,12 @@ Context* GetContext(const String& name)
 	return i->second.get();
 }
 
+// Fetches a context by index.
 Context* GetContext(int index)
 {
 	ContextMap::iterator i = contexts.begin();
 	int count = 0;
-
+	
 	if (index < 0 || index >= GetNumContexts())
 		return nullptr;
 
@@ -309,14 +322,15 @@ Context* GetContext(int index)
 	return i->second.get();
 }
 
+// Returns the number of active contexts.
 int GetNumContexts()
 {
-	return (int)contexts.size();
+	return (int) contexts.size();
 }
 
-bool LoadFontFace(const String& file_path, bool fallback_face, Style::FontWeight weight)
+bool LoadFontFace(const String& file_name, bool fallback_face, Style::FontWeight weight)
 {
-	return font_interface->LoadFontFace(file_path, fallback_face, weight);
+	return font_interface->LoadFontFace(file_name, fallback_face, weight);
 }
 
 bool LoadFontFace(const byte* data, int data_size, const String& font_family, Style::FontStyle style, Style::FontWeight weight, bool fallback_face)
@@ -324,6 +338,7 @@ bool LoadFontFace(const byte* data, int data_size, const String& font_family, St
 	return font_interface->LoadFontFace(data, data_size, font_family, style, weight, fallback_face);
 }
 
+// Registers a generic rmlui plugin
 void RegisterPlugin(Plugin* plugin)
 {
 	if (initialised)
@@ -332,11 +347,12 @@ void RegisterPlugin(Plugin* plugin)
 	PluginRegistry::RegisterPlugin(plugin);
 }
 
+// Unregisters a generic rmlui plugin
 void UnregisterPlugin(Plugin* plugin)
 {
 	PluginRegistry::UnregisterPlugin(plugin);
 
-	if (initialised)
+	if(initialised)
 		plugin->OnShutdown();
 }
 
@@ -350,14 +366,9 @@ StringList GetTextureSourceList()
 	return TextureDatabase::GetSourceList();
 }
 
-void ReleaseTextures()
+void ReleaseTextures(RenderInterface* in_render_interface)
 {
-	TextureDatabase::ReleaseTextures();
-}
-
-bool ReleaseTexture(const String& source)
-{
-	return TextureDatabase::ReleaseTexture(source);
+	TextureDatabase::ReleaseTextures(in_render_interface);
 }
 
 void ReleaseCompiledGeometry()

@@ -4,7 +4,7 @@
  * For the latest information, see http://github.com/mikke89/RmlUi
  *
  * Copyright (c) 2008-2010 CodePoint Ltd, Shift Technology Ltd
- * Copyright (c) 2019-2023 The RmlUi Team, and contributors
+ * Copyright (c) 2019 The RmlUi Team, and contributors
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -29,11 +29,9 @@
 #include "../include/Shell.h"
 #include "../include/PlatformExtensions.h"
 #include "../include/ShellFileInterface.h"
-#include <RmlUi/Core/Context.h>
 #include <RmlUi/Core/Core.h>
-#include <RmlUi/Core/ElementDocument.h>
-#include <RmlUi/Core/Input.h>
-#include <RmlUi/Debugger.h>
+#include <RmlUi/Core/Profiling.h>
+#include <RmlUi_Backend.h>
 
 static Rml::UniquePtr<ShellFileInterface> file_interface;
 
@@ -48,12 +46,28 @@ bool Shell::Initialize()
 	file_interface = Rml::MakeUnique<ShellFileInterface>(root);
 	Rml::SetFileInterface(file_interface.get());
 
+	// The backend initializes the system interface and render interface for its platform and renderer.
+	if (!Backend::InitializeInterfaces())
+		return false;
+
 	return true;
 }
 
 void Shell::Shutdown()
 {
+	Backend::ShutdownInterfaces();
 	file_interface.reset();
+}
+
+bool Shell::OpenWindow(const char* name, int width, int height, bool allow_resize)
+{
+	bool result = Backend::OpenWindow(name, width, height, allow_resize);
+	return result;
+}
+
+void Shell::CloseWindow()
+{
+	Backend::CloseWindow();
 }
 
 void Shell::LoadFonts()
@@ -76,70 +90,28 @@ void Shell::LoadFonts()
 		Rml::LoadFontFace(directory + face.filename, face.fallback_face);
 }
 
-bool Shell::ProcessKeyDownShortcuts(Rml::Context* context, Rml::Input::KeyIdentifier key, int key_modifier, float native_dp_ratio, bool priority)
+void Shell::SetContext(Rml::Context* context)
 {
-	if (!context)
-		return true;
+	Backend::SetContext(context);
+}
 
-	// Result should return true to allow the event to propagate to the next handler.
-	bool result = false;
+void Shell::EventLoop(ShellIdleFunction idle_function)
+{
+	Backend::EventLoop(idle_function);
+}
 
-	// This function is intended to be called twice by the backend, before and after submitting the key event to the context. This way we can
-	// intercept shortcuts that should take priority over the context, and then handle any shortcuts of lower priority if the context did not
-	// intercept it.
-	if (priority)
-	{
-		// Priority shortcuts are handled before submitting the key to the context.
+void Shell::RequestExit()
+{
+	Backend::RequestExit();
+}
 
-		// Toggle debugger and set dp-ratio using Ctrl +/-/0 keys.
-		if (key == Rml::Input::KI_F8)
-		{
-			Rml::Debugger::SetVisible(!Rml::Debugger::IsVisible());
-		}
-		else if (key == Rml::Input::KI_0 && key_modifier & Rml::Input::KM_CTRL)
-		{
-			context->SetDensityIndependentPixelRatio(native_dp_ratio);
-		}
-		else if (key == Rml::Input::KI_1 && key_modifier & Rml::Input::KM_CTRL)
-		{
-			context->SetDensityIndependentPixelRatio(1.f);
-		}
-		else if ((key == Rml::Input::KI_OEM_MINUS || key == Rml::Input::KI_SUBTRACT) && key_modifier & Rml::Input::KM_CTRL)
-		{
-			const float new_dp_ratio = Rml::Math::Max(context->GetDensityIndependentPixelRatio() / 1.2f, 0.5f);
-			context->SetDensityIndependentPixelRatio(new_dp_ratio);
-		}
-		else if ((key == Rml::Input::KI_OEM_PLUS || key == Rml::Input::KI_ADD) && key_modifier & Rml::Input::KM_CTRL)
-		{
-			const float new_dp_ratio = Rml::Math::Min(context->GetDensityIndependentPixelRatio() * 1.2f, 2.5f);
-			context->SetDensityIndependentPixelRatio(new_dp_ratio);
-		}
-		else
-		{
-			// Propagate the key down event to the context.
-			result = true;
-		}
-	}
-	else
-	{
-		// We arrive here when no priority keys are detected and the key was not consumed by the context. Check for shortcuts of lower priority.
-		if (key == Rml::Input::KI_R && key_modifier & Rml::Input::KM_CTRL)
-		{
-			for (int i = 0; i < context->GetNumDocuments(); i++)
-			{
-				Rml::ElementDocument* document = context->GetDocument(i);
-				const Rml::String& src = document->GetSourceURL();
-				if (src.size() > 4 && src.substr(src.size() - 4) == ".rml")
-				{
-					document->ReloadStyleSheet();
-				}
-			}
-		}
-		else
-		{
-			result = true;
-		}
-	}
+void Shell::BeginFrame()
+{
+	Backend::BeginFrame();
+}
 
-	return result;
+void Shell::PresentFrame()
+{
+	Backend::PresentFrame();
+	RMLUI_FrameMark;
 }

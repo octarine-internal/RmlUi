@@ -4,7 +4,7 @@
  * For the latest information, see http://github.com/mikke89/RmlUi
  *
  * Copyright (c) 2008-2010 CodePoint Ltd, Shift Technology Ltd
- * Copyright (c) 2019-2023 The RmlUi Team, and contributors
+ * Copyright (c) 2019 The RmlUi Team, and contributors
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -15,7 +15,7 @@
  *
  * The above copyright notice and this permission notice shall be included in
  * all copies or substantial portions of the Software.
- *
+ * 
  * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
  * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
  * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -30,25 +30,27 @@
 #define RMLUI_CORE_ELEMENTUTILITIES_H
 
 #include "Header.h"
+#include "RenderState.h"
 #include "Types.h"
 
 namespace Rml {
 
 class Box;
 class Context;
-namespace Style {
-	class ComputedValues;
-}
+class RenderInterface;
+namespace Style { class ComputedValues; }
 
 /**
-    Utility functions for dealing with elements.
+	Utility functions for dealing with elements.
 
-    @author Lloyd Weehuizen
+	@author Lloyd Weehuizen
  */
 
-class RMLUICORE_API ElementUtilities {
+class RMLUICORE_API ElementUtilities
+{
 public:
-	enum PositionAnchor {
+	enum PositionAnchor
+	{
 		TOP = 1 << 0,
 		BOTTOM = 1 << 1,
 		LEFT = 1 << 2,
@@ -87,19 +89,22 @@ public:
 	static int GetStringWidth(Element* element, const String& string, Character prior_character = Character::Null);
 
 	/// Generates the clipping region for an element.
-	/// @param[out] clip_origin The origin, in context coordinates, of the origin of the element's clipping window.
-	/// @param[out] clip_dimensions The size, in context coordinates, of the element's clipping window.
+	/// @param[out] clip_region The element's clipping window in context coordinates.
 	/// @param[in] element The element to generate the clipping region for.
-	/// @return True if a clipping region exists for the element and clip_origin and clip_window were set, false if not.
-	static bool GetClippingRegion(Vector2i& clip_origin, Vector2i& clip_dimensions, Element* element);
+	/// @param[out] clip_mask_list Optional, returns a list of elements that should have their clip mask applied.
+	/// @param[in] force_clip_self If true, also clips to the border area of the provided element regardless.
+	/// @return True if a scissor region exists for the element and clip_origin and clip_dimensions were set, otherwise false.
+	static bool GetClippingRegion(Rectanglei& clip_region, Element* element, ElementClipList* clip_mask_list = nullptr, bool force_clip_self = false);
 	/// Sets the clipping region from an element and its ancestors.
 	/// @param[in] element The element to generate the clipping region from.
-	/// @param[in] context The context of the element; if this is not supplied, it will be derived from the element.
+	/// @param[in] force_clip_self If true, also clips to the border area of the provided element regardless.
 	/// @return The visibility of the given element within its clipping region.
-	static bool SetClippingRegion(Element* element, Context* context = nullptr);
-	/// Applies the clip region from the render interface to the renderer
-	/// @param[in] context The context to read the clip region from
-	static void ApplyActiveClipRegion(Context* context);
+	static bool SetClippingRegion(Element* element, bool force_clip_self = false);
+
+	/// Returns a rectangle covering the element's area in window coordinate space.
+	/// @return True on success, otherwise false.
+	/// @note When area is Auto the element's box-shadow area is also included.
+	static bool GetBoundingBox(Rectanglef& out_rectangle, Element* element, BoxArea area);
 
 	/// Formats the contents of an element. This does not need to be called for ordinary elements, but can be useful
 	/// for non-DOM elements of custom elements.
@@ -122,10 +127,9 @@ public:
 	static bool PositionElement(Element* element, Vector2f offset, PositionAnchor anchor);
 
 	/// Applies an element's accumulated transform matrix, determined from its and ancestor's `perspective' and `transform' properties.
-	/// @param[in] element The element whose transform to apply.
-	/// @return true if a render interface is available to set the transform.
-	/// @note All calls to RenderInterface::SetTransform must go through here.
-	static bool ApplyTransform(Element& element);
+	/// @param[in] element The element whose transform to apply, or nullptr for identity transform.
+	/// @return True if a render interface is available to set the transform.
+	static bool ApplyTransform(Element* element);
 
 	/// Creates data views and data controllers if a data model applies to the element.
 	/// Attributes such as 'data-' are used to create the views and controllers.

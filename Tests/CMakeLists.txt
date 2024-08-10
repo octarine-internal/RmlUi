@@ -23,13 +23,6 @@ include_dependency("nanobench")
 include_dependency("lodepng")
 include_dependency("trompeloeil")
 
-if(MSVC)
-	target_compile_definitions(doctest::doctest INTERFACE DOCTEST_CONFIG_USE_STD_HEADERS)
-endif()
-if(DISABLE_RTTI_AND_EXCEPTIONS)
-	target_compile_definitions(doctest::doctest INTERFACE DOCTEST_CONFIG_NO_EXCEPTIONS_BUT_WITH_ALL_ASSERTS)
-endif()
-
 #===================================
 # Common source files ==============
 #===================================
@@ -45,8 +38,12 @@ file(GLOB UnitTests_HDR_FILES ${CMAKE_CURRENT_SOURCE_DIR}/Source/UnitTests/*.h )
 file(GLOB UnitTests_SRC_FILES ${CMAKE_CURRENT_SOURCE_DIR}/Source/UnitTests/*.cpp )
 
 add_executable(UnitTests ${UnitTests_HDR_FILES} ${UnitTests_SRC_FILES})
-target_link_libraries(UnitTests RmlCore RmlDebugger doctest::doctest trompeloeil::trompeloeil ${sample_LIBRARIES})
+target_link_libraries(UnitTests RmlCore doctest::doctest trompeloeil::trompeloeil ${sample_LIBRARIES})
 add_common_target_options(UnitTests)
+
+if(MSVC)
+	target_compile_definitions(UnitTests PUBLIC DOCTEST_CONFIG_USE_STD_HEADERS)
+endif()
 
 doctest_discover_tests(UnitTests)
 
@@ -78,6 +75,10 @@ if(VISUAL_TESTS_CAPTURE_DIRECTORY)
 	target_compile_definitions(VisualTests PRIVATE RMLUI_VISUAL_TESTS_CAPTURE_DIRECTORY="${VISUAL_TESTS_CAPTURE_DIRECTORY}")
 endif()
 
+if(MSVC)
+	target_compile_definitions(VisualTests PUBLIC DOCTEST_CONFIG_USE_STD_HEADERS)
+endif()
+
 
 
 #===================================
@@ -91,6 +92,10 @@ add_executable(Benchmarks ${Benchmarks_HDR_FILES} ${Benchmarks_SRC_FILES} ${Test
 target_link_libraries(Benchmarks RmlCore RmlDebugger doctest::doctest nanobench::nanobench ${sample_LIBRARIES})
 add_common_target_options(Benchmarks)
 
+if(MSVC)
+	target_compile_definitions(Benchmarks PUBLIC DOCTEST_CONFIG_USE_STD_HEADERS)
+endif()
+
 
 
 #===================================
@@ -99,7 +104,7 @@ add_common_target_options(Benchmarks)
 
 if(EMSCRIPTEN)
 	set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -sLLD_REPORT_UNDEFINED --preload-file ${CMAKE_CURRENT_SOURCE_DIR}/Data/@/Tests/Data/")
-
+	
 	# Benchmarks additionally use the benchmark sample data.
 	target_link_libraries(Benchmarks "--preload-file ${CMAKE_CURRENT_SOURCE_DIR}/../Samples/basic/benchmark/data/@/Samples/basic/benchmark/data/")
 endif()

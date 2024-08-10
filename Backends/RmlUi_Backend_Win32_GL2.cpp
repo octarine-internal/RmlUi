@@ -4,7 +4,7 @@
  * For the latest information, see http://github.com/mikke89/RmlUi
  *
  * Copyright (c) 2008-2010 CodePoint Ltd, Shift Technology Ltd
- * Copyright (c) 2019-2023 The RmlUi Team, and contributors
+ * Copyright (c) 2019 The RmlUi Team, and contributors
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -32,377 +32,175 @@
 #include "RmlUi_Renderer_GL2.h"
 #include <RmlUi/Core/Context.h>
 #include <RmlUi/Core/Core.h>
-#include <RmlUi/Core/Input.h>
-#include <RmlUi/Core/Profiling.h>
+#include <RmlUi/Core/ElementDocument.h>
+#include <RmlUi/Core/StringUtilities.h>
+#include <RmlUi/Debugger/Debugger.h>
 
-/**
-    High DPI support using Windows Per Monitor V2 DPI awareness.
+static HWND window_handle = nullptr;
+static HDC device_context = nullptr;
+static HGLRC render_context = nullptr;
 
-    Requires Windows 10, version 1703.
- */
-#ifndef DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2
-	#define DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 ((HANDLE)-4)
-#endif
-#ifndef WM_DPICHANGED
-	#define WM_DPICHANGED 0x02E0
-#endif
+static Rml::Context* context = nullptr;
+static bool running = false;
 
-// Declare pointers to the DPI aware Windows API functions.
-using ProcSetProcessDpiAwarenessContext = BOOL(WINAPI*)(HANDLE value);
-using ProcGetDpiForWindow = UINT(WINAPI*)(HWND hwnd);
-using ProcAdjustWindowRectExForDpi = BOOL(WINAPI*)(LPRECT lpRect, DWORD dwStyle, BOOL bMenu, DWORD dwExStyle, UINT dpi);
+static Rml::UniquePtr<RenderInterface_GL2> render_interface;
+static Rml::UniquePtr<SystemInterface_Win32> system_interface;
 
-static bool has_dpi_support = false;
-static ProcSetProcessDpiAwarenessContext procSetProcessDpiAwarenessContext = NULL;
-static ProcGetDpiForWindow procGetDpiForWindow = NULL;
-static ProcAdjustWindowRectExForDpi procAdjustWindowRectExForDpi = NULL;
+static bool AttachToNative();
+static void DetachFromNative();
+static void ProcessKeyDown(Rml::Input::KeyIdentifier key_identifier, const int key_modifier_state);
 
-// Make ourselves DPI aware on supported Windows versions.
-static void InitializeDpiSupport()
+static LRESULT CALLBACK WindowProcedureHandler(HWND local_window_handle, UINT message, WPARAM w_param, LPARAM l_param)
 {
-	// Cast function pointers to void* first for MinGW not to emit errors.
-	procSetProcessDpiAwarenessContext =
-		(ProcSetProcessDpiAwarenessContext)(void*)GetProcAddress(GetModuleHandle(TEXT("User32.dll")), "SetProcessDpiAwarenessContext");
-	procGetDpiForWindow = (ProcGetDpiForWindow)(void*)GetProcAddress(GetModuleHandle(TEXT("User32.dll")), "GetDpiForWindow");
-	procAdjustWindowRectExForDpi =
-		(ProcAdjustWindowRectExForDpi)(void*)GetProcAddress(GetModuleHandle(TEXT("User32.dll")), "AdjustWindowRectExForDpi");
-
-	if (!has_dpi_support && procSetProcessDpiAwarenessContext != NULL && procGetDpiForWindow != NULL && procAdjustWindowRectExForDpi != NULL)
-	{
-		// Activate Per Monitor V2.
-		if (procSetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2))
-			has_dpi_support = true;
-	}
-}
-
-static UINT GetWindowDpi(HWND window_handle)
-{
-	if (has_dpi_support)
-	{
-		UINT dpi = procGetDpiForWindow(window_handle);
-		if (dpi != 0)
-			return dpi;
-	}
-	return USER_DEFAULT_SCREEN_DPI;
-}
-
-static float GetDensityIndependentPixelRatio(HWND window_handle)
-{
-	return float(GetWindowDpi(window_handle)) / float(USER_DEFAULT_SCREEN_DPI);
-}
-
-static void DisplayError(HWND window_handle, const Rml::String& msg)
-{
-	MessageBoxW(window_handle, RmlWin32::ConvertToUTF16(msg).c_str(), L"Backend Error", MB_OK);
-}
-
-// Create the window but don't show it yet. Returns the pixel size of the window, which may be different than the passed size due to DPI settings.
-static HWND InitializeWindow(HINSTANCE instance_handle, const std::wstring& name, int& inout_width, int& inout_height, bool allow_resize);
-// Attach the OpenGL context.
-static bool AttachToNative(HWND window_handle, HDC& out_device_context, HGLRC& out_render_context);
-// Detach the OpenGL context.
-static void DetachFromNative(HWND window_handle, HDC device_context, HGLRC render_context);
-
-/**
-    Global data used by this backend.
-
-    Lifetime governed by the calls to Backend::Initialize() and Backend::Shutdown().
- */
-struct BackendData {
-	SystemInterface_Win32 system_interface;
-	RenderInterface_GL2 render_interface;
-
-	HINSTANCE instance_handle = nullptr;
-	std::wstring instance_name;
-	HWND window_handle = nullptr;
-
-	HDC device_context = nullptr;
-	HGLRC render_context = nullptr;
-
-	bool context_dimensions_dirty = true;
-	Rml::Vector2i window_dimensions;
-	bool running = true;
-
-	// Arguments set during event processing and nulled otherwise.
-	Rml::Context* context = nullptr;
-	KeyDownCallback key_down_callback = nullptr;
-};
-static Rml::UniquePtr<BackendData> data;
-
-bool Backend::Initialize(const char* window_name, int width, int height, bool allow_resize)
-{
-	RMLUI_ASSERT(!data);
-
-	const std::wstring name = RmlWin32::ConvertToUTF16(Rml::String(window_name));
-
-	data = Rml::MakeUnique<BackendData>();
-
-	data->instance_handle = GetModuleHandle(nullptr);
-	data->instance_name = name;
-
-	InitializeDpiSupport();
-
-	// Initialize the window but don't show it yet.
-	HWND window_handle = InitializeWindow(data->instance_handle, name, width, height, allow_resize);
-	if (!window_handle)
-		return false;
-
-	// Attach the OpenGL context.
-	if (!AttachToNative(window_handle, data->device_context, data->render_context))
-	{
-		::CloseWindow(window_handle);
-		return false;
-	}
-
-	data->window_handle = window_handle;
-	data->system_interface.SetWindow(window_handle);
-
-	// Now we are ready to show the window.
-	::ShowWindow(window_handle, SW_SHOW);
-	::SetForegroundWindow(window_handle);
-	::SetFocus(window_handle);
-
-	return true;
-}
-
-void Backend::Shutdown()
-{
-	RMLUI_ASSERT(data);
-
-	DetachFromNative(data->window_handle, data->device_context, data->render_context);
-
-	::DestroyWindow(data->window_handle);
-	::UnregisterClassW((LPCWSTR)data->instance_name.data(), data->instance_handle);
-
-	data.reset();
-}
-
-Rml::SystemInterface* Backend::GetSystemInterface()
-{
-	RMLUI_ASSERT(data);
-	return &data->system_interface;
-}
-
-Rml::RenderInterface* Backend::GetRenderInterface()
-{
-	RMLUI_ASSERT(data);
-	return &data->render_interface;
-}
-
-static bool NextEvent(MSG& message, UINT timeout)
-{
-	if (timeout != 0)
-	{
-		UINT_PTR timer_id = SetTimer(NULL, NULL, timeout, NULL);
-		BOOL res = GetMessage(&message, NULL, 0, 0);
-		KillTimer(NULL, timer_id);
-		if (message.message != WM_TIMER || message.hwnd != nullptr || message.wParam != timer_id)
-			return res;
-	}
-	return PeekMessage(&message, nullptr, 0, 0, PM_REMOVE);
-}
-
-bool Backend::ProcessEvents(Rml::Context* context, KeyDownCallback key_down_callback, bool power_save)
-{
-	RMLUI_ASSERT(data && context);
-
-	// The initial window size may have been affected by system DPI settings, apply the actual pixel size and dp-ratio to the context.
-	if (data->context_dimensions_dirty)
-	{
-		data->context_dimensions_dirty = false;
-		const float dp_ratio = GetDensityIndependentPixelRatio(data->window_handle);
-		context->SetDimensions(data->window_dimensions);
-		context->SetDensityIndependentPixelRatio(dp_ratio);
-	}
-
-	data->context = context;
-	data->key_down_callback = key_down_callback;
-
-	MSG message;
-	bool has_message = NextEvent(message, power_save ? static_cast<int>(Rml::Math::Min(context->GetNextUpdateDelay(), 10.0) * 1000.0) : 0);
-	while (has_message)
-	{
-		// Dispatch the message to our local event handler below.
-		TranslateMessage(&message);
-		DispatchMessage(&message);
-
-		has_message = NextEvent(message, 0);
-	}
-
-	data->context = nullptr;
-	data->key_down_callback = nullptr;
-
-	const bool result = data->running;
-	data->running = true;
-	return result;
-}
-
-void Backend::RequestExit()
-{
-	RMLUI_ASSERT(data);
-	data->running = false;
-}
-
-void Backend::BeginFrame()
-{
-	RMLUI_ASSERT(data);
-	data->render_interface.BeginFrame();
-	data->render_interface.Clear();
-}
-
-void Backend::PresentFrame()
-{
-	RMLUI_ASSERT(data);
-	data->render_interface.EndFrame();
-
-	// Flips the OpenGL buffers.
-	SwapBuffers(data->device_context);
-
-	// Optional, used to mark frames during performance profiling.
-	RMLUI_FrameMark;
-}
-
-// Local event handler for window and input events.
-static LRESULT CALLBACK WindowProcedureHandler(HWND window_handle, UINT message, WPARAM w_param, LPARAM l_param)
-{
-	RMLUI_ASSERT(data);
-
 	switch (message)
 	{
 	case WM_CLOSE:
 	{
-		data->running = false;
+		running = false;
 		return 0;
 	}
 	break;
 	case WM_SIZE:
 	{
-		const int width = LOWORD(l_param);
-		const int height = HIWORD(l_param);
-		data->window_dimensions.x = width;
-		data->window_dimensions.y = height;
-		data->render_interface.SetViewport(width, height);
-		if (data->context)
-			data->context->SetDimensions(data->window_dimensions);
-		return 0;
-	}
-	break;
-	case WM_DPICHANGED:
-	{
-		RECT* new_pos = (RECT*)l_param;
-		SetWindowPos(window_handle, NULL, new_pos->left, new_pos->top, new_pos->right - new_pos->left, new_pos->bottom - new_pos->top,
-			SWP_NOZORDER | SWP_NOACTIVATE);
-		if (data->context && has_dpi_support)
-			data->context->SetDensityIndependentPixelRatio(GetDensityIndependentPixelRatio(window_handle));
+		// Intercept sizing to set the OpenGL viewport, then submit it to the platform handler for context sizing.
+		int width = LOWORD(l_param);
+		int height = HIWORD(l_param);
+		RmlGL2::SetViewport(width, height);
+		RmlWin32::WindowProcedure(local_window_handle, message, w_param, l_param);
 		return 0;
 	}
 	break;
 	case WM_KEYDOWN:
 	{
-		// Override the default key event callback to add global shortcuts for the samples.
-		Rml::Context* context = data->context;
-		KeyDownCallback key_down_callback = data->key_down_callback;
-
-		const Rml::Input::KeyIdentifier rml_key = RmlWin32::ConvertKey((int)w_param);
-		const int rml_modifier = RmlWin32::GetKeyModifierState();
-		const float native_dp_ratio = GetDensityIndependentPixelRatio(window_handle);
-
-		// See if we have any global shortcuts that take priority over the context.
-		if (key_down_callback && !key_down_callback(context, rml_key, rml_modifier, native_dp_ratio, true))
-			return 0;
-		// Otherwise, hand the event over to the context by calling the input handler as normal.
-		if (!RmlWin32::WindowProcedure(context, window_handle, message, w_param, l_param))
-			return 0;
-		// The key was not consumed by the context either, try keyboard shortcuts of lower priority.
-		if (key_down_callback && !key_down_callback(context, rml_key, rml_modifier, native_dp_ratio, false))
-			return 0;
+		// Intercept and process keydown events because we add some global hotkeys to the RmlUi samples.
+		ProcessKeyDown(RmlWin32::ConvertKey((int)w_param), RmlWin32::GetKeyModifierState());
 		return 0;
 	}
 	break;
 	default:
 	{
-		// Submit it to the platform handler for default input handling.
-		if (!RmlWin32::WindowProcedure(data->context, window_handle, message, w_param, l_param))
+		// Submit it to the platform handler for default input and window handling.
+		LRESULT result = RmlWin32::WindowProcedure(local_window_handle, message, w_param, l_param);
+		if (result == 0)
 			return 0;
 	}
 	break;
 	}
 
 	// All unhandled messages go to DefWindowProc.
-	return DefWindowProc(window_handle, message, w_param, l_param);
+	return DefWindowProc(local_window_handle, message, w_param, l_param);
 }
 
-static HWND InitializeWindow(HINSTANCE instance_handle, const std::wstring& name, int& inout_width, int& inout_height, bool allow_resize)
+bool Backend::InitializeInterfaces()
 {
-	// Fill out the window class struct.
-	WNDCLASSW window_class;
-	window_class.style = CS_HREDRAW | CS_VREDRAW | CS_OWNDC;
-	window_class.lpfnWndProc = &WindowProcedureHandler; // Attach our local event handler.
-	window_class.cbClsExtra = 0;
-	window_class.cbWndExtra = 0;
-	window_class.hInstance = instance_handle;
-	window_class.hIcon = LoadIcon(nullptr, IDI_WINLOGO);
-	window_class.hCursor = LoadCursor(nullptr, IDC_ARROW);
-	window_class.hbrBackground = nullptr;
-	window_class.lpszMenuName = nullptr;
-	window_class.lpszClassName = name.data();
+	RMLUI_ASSERT(!system_interface && !render_interface);
 
-	if (!RegisterClassW(&window_class))
-	{
-		DisplayError(NULL, "Could not register window class.");
-		return nullptr;
-	}
+	system_interface = Rml::MakeUnique<SystemInterface_Win32>();
+	Rml::SetSystemInterface(system_interface.get());
 
-	HWND window_handle = CreateWindowExW(WS_EX_APPWINDOW | WS_EX_WINDOWEDGE,
-		name.data(),                                                                // Window class name.
-		name.data(), WS_CLIPSIBLINGS | WS_CLIPCHILDREN | WS_OVERLAPPEDWINDOW, 0, 0, // Window position.
-		0, 0,                                                                       // Window size.
-		nullptr, nullptr, instance_handle, nullptr);
+	render_interface = Rml::MakeUnique<RenderInterface_GL2>();
+	Rml::SetRenderInterface(render_interface.get());
 
-	if (!window_handle)
-	{
-		DisplayError(NULL, "Could not create window.");
-		return nullptr;
-	}
-
-	UINT window_dpi = GetWindowDpi(window_handle);
-	inout_width = (inout_width * (int)window_dpi) / USER_DEFAULT_SCREEN_DPI;
-	inout_height = (inout_height * (int)window_dpi) / USER_DEFAULT_SCREEN_DPI;
-
-	DWORD style = (allow_resize ? WS_OVERLAPPEDWINDOW : (WS_OVERLAPPEDWINDOW & ~WS_SIZEBOX & ~WS_MAXIMIZEBOX));
-	DWORD extended_style = WS_EX_APPWINDOW | WS_EX_WINDOWEDGE;
-
-	// Adjust the window size to take the edges into account.
-	RECT window_rect;
-	window_rect.top = 0;
-	window_rect.left = 0;
-	window_rect.right = inout_width;
-	window_rect.bottom = inout_height;
-	if (has_dpi_support)
-		procAdjustWindowRectExForDpi(&window_rect, style, FALSE, extended_style, window_dpi);
-	else
-		AdjustWindowRectEx(&window_rect, style, FALSE, extended_style);
-
-	SetWindowLong(window_handle, GWL_EXSTYLE, extended_style);
-	SetWindowLong(window_handle, GWL_STYLE, style);
-
-	// Resize the window.
-	SetWindowPos(window_handle, HWND_TOP, 0, 0, window_rect.right - window_rect.left, window_rect.bottom - window_rect.top, SWP_NOACTIVATE);
-
-	return window_handle;
+	return true;
 }
 
-static bool AttachToNative(HWND window_handle, HDC& out_device_context, HGLRC& out_render_context)
+void Backend::ShutdownInterfaces()
 {
-	HDC device_context = GetDC(window_handle);
+	render_interface.reset();
+	system_interface.reset();
+}
 
-	if (!device_context)
+bool Backend::OpenWindow(const char* name, int width, int height, bool allow_resize)
+{
+	if (!RmlWin32::Initialize())
+		return false;
+
+	// Initialize the window but don't show it yet.
+	if (!RmlWin32::InitializeWindow(name, width, height, allow_resize, window_handle, WindowProcedureHandler))
+		return false;
+
+	// Attach the OpenGL context.
+	if (!AttachToNative())
 	{
-		DisplayError(window_handle, "Could not get device context.");
+		CloseWindow();
 		return false;
 	}
 
-	PIXELFORMATDESCRIPTOR pixel_format_descriptor = {};
+	// Now we are ready to show the window.
+	RmlWin32::ShowWindow();
+
+	return true;
+}
+
+void Backend::CloseWindow()
+{
+	DetachFromNative();
+	RmlWin32::CloseWindow();
+	window_handle = nullptr;
+
+	RmlWin32::Shutdown();
+	RmlGL2::Shutdown();
+}
+
+void Backend::SetContext(Rml::Context* new_context)
+{
+	context = new_context;
+	RmlWin32::SetContext(new_context);
+}
+
+void Backend::EventLoop(ShellIdleFunction idle_function)
+{
+	MSG message;
+	running = true;
+
+	// Loop on PeekMessage() / GetMessage() until exit has been requested.
+	while (running)
+	{
+		if (PeekMessage(&message, nullptr, 0, 0, PM_NOREMOVE))
+		{
+			GetMessage(&message, nullptr, 0, 0);
+
+			TranslateMessage(&message);
+			DispatchMessage(&message);
+		}
+
+		idle_function();
+	}
+}
+
+void Backend::RequestExit()
+{
+	running = false;
+}
+
+void Backend::BeginFrame()
+{
+	RmlGL2::BeginFrame();
+	RmlGL2::Clear();
+}
+
+void Backend::PresentFrame()
+{
+	RmlGL2::EndFrame();
+
+	// Flips the OpenGL buffers.
+	SwapBuffers(device_context);
+}
+
+static bool AttachToNative()
+{
+	RMLUI_ASSERT(window_handle);
+	device_context = GetDC(window_handle);
+	render_context = nullptr;
+
+	if (device_context == nullptr)
+	{
+		RmlWin32::DisplayError("Could not get device context.");
+		return false;
+	}
+
+	PIXELFORMATDESCRIPTOR pixel_format_descriptor;
+	memset(&pixel_format_descriptor, 0, sizeof(pixel_format_descriptor));
 	pixel_format_descriptor.nSize = sizeof(PIXELFORMATDESCRIPTOR);
 	pixel_format_descriptor.nVersion = 1;
 	pixel_format_descriptor.dwFlags = PFD_DRAW_TO_WINDOW | PFD_SUPPORT_OPENGL | PFD_DOUBLEBUFFER;
@@ -416,49 +214,100 @@ static bool AttachToNative(HWND window_handle, HDC& out_device_context, HGLRC& o
 	pixel_format_descriptor.cStencilBits = 8;
 
 	int pixel_format = ChoosePixelFormat(device_context, &pixel_format_descriptor);
-	if (!pixel_format)
+	if (pixel_format == 0)
 	{
-		DisplayError(window_handle, "Could not choose 32-bit pixel format.");
+		RmlWin32::DisplayError("Could not choose 32-bit pixel format.");
 		return false;
 	}
 
-	if (!SetPixelFormat(device_context, pixel_format, &pixel_format_descriptor))
+	if (SetPixelFormat(device_context, pixel_format, &pixel_format_descriptor) == FALSE)
 	{
-		DisplayError(window_handle, "Could not set pixel format.");
+		RmlWin32::DisplayError("Could not set pixel format.");
 		return false;
 	}
 
-	HGLRC render_context = wglCreateContext(device_context);
-	if (!render_context)
+	render_context = wglCreateContext(device_context);
+	if (render_context == nullptr)
 	{
-		DisplayError(window_handle, "Could not create OpenGL rendering context.");
+		RmlWin32::DisplayError("Could not create OpenGL rendering context.");
 		return false;
 	}
 
 	// Activate the rendering context.
-	if (!wglMakeCurrent(device_context, render_context))
+	if (wglMakeCurrent(device_context, render_context) == FALSE)
 	{
-		DisplayError(window_handle, "Unable to make rendering context current.");
+		RmlWin32::DisplayError("Unable to make rendering context current.");
 		return false;
 	}
 
-	out_device_context = device_context;
-	out_render_context = render_context;
+	RmlGL2::Initialize();
 
 	return true;
 }
 
-static void DetachFromNative(HWND window_handle, HDC device_context, HGLRC render_context)
+static void DetachFromNative()
 {
 	// Shutdown OpenGL
 	if (render_context)
 	{
 		wglMakeCurrent(nullptr, nullptr);
 		wglDeleteContext(render_context);
+		render_context = nullptr;
 	}
 
 	if (device_context)
 	{
 		ReleaseDC(window_handle, device_context);
+		device_context = nullptr;
+	}
+}
+
+static void ProcessKeyDown(Rml::Input::KeyIdentifier key_identifier, const int key_modifier_state)
+{
+	if (!context)
+		return;
+
+	// Toggle debugger and set dp-ratio using Ctrl +/-/0 keys. These global shortcuts take priority.
+	if (key_identifier == Rml::Input::KI_F8)
+	{
+		Rml::Debugger::SetVisible(!Rml::Debugger::IsVisible());
+	}
+	else if (key_identifier == Rml::Input::KI_0 && key_modifier_state & Rml::Input::KM_CTRL)
+	{
+		context->SetDensityIndependentPixelRatio(RmlWin32::GetDensityIndependentPixelRatio());
+	}
+	else if (key_identifier == Rml::Input::KI_1 && key_modifier_state & Rml::Input::KM_CTRL)
+	{
+		context->SetDensityIndependentPixelRatio(1.f);
+	}
+	else if (key_identifier == Rml::Input::KI_OEM_MINUS && key_modifier_state & Rml::Input::KM_CTRL)
+	{
+		const float new_dp_ratio = Rml::Math::Max(context->GetDensityIndependentPixelRatio() / 1.2f, 0.5f);
+		context->SetDensityIndependentPixelRatio(new_dp_ratio);
+	}
+	else if (key_identifier == Rml::Input::KI_OEM_PLUS && key_modifier_state & Rml::Input::KM_CTRL)
+	{
+		const float new_dp_ratio = Rml::Math::Min(context->GetDensityIndependentPixelRatio() * 1.2f, 2.5f);
+		context->SetDensityIndependentPixelRatio(new_dp_ratio);
+	}
+	else
+	{
+		// No global shortcuts detected, submit the key to the context.
+		if (context->ProcessKeyDown(key_identifier, key_modifier_state))
+		{
+			// The key was not consumed, check for shortcuts that are of lower priority.
+			if (key_identifier == Rml::Input::KI_R && key_modifier_state & Rml::Input::KM_CTRL)
+			{
+				for (int i = 0; i < context->GetNumDocuments(); i++)
+				{
+					Rml::ElementDocument* document = context->GetDocument(i);
+					const Rml::String& src = document->GetSourceURL();
+					if (src.size() > 4 && src.substr(src.size() - 4) == ".rml")
+					{
+						document->ReloadStyleSheet();
+					}
+				}
+			}
+		}
 	}
 }

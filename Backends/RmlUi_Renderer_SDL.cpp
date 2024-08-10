@@ -4,7 +4,7 @@
  * For the latest information, see http://github.com/mikke89/RmlUi
  *
  * Copyright (c) 2008-2010 CodePoint Ltd, Shift Technology Ltd
- * Copyright (c) 2019-2023 The RmlUi Team, and contributors
+ * Copyright (c) 2019 The RmlUi Team, and contributors
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -33,17 +33,11 @@
 #include <SDL.h>
 #include <SDL_image.h>
 
-RenderInterface_SDL::RenderInterface_SDL(SDL_Renderer* renderer) : renderer(renderer) {}
+static SDL_Renderer* renderer = nullptr;
+static SDL_Rect rect_scissor = {};
+static bool scissor_region_enabled = false;
 
-void RenderInterface_SDL::BeginFrame()
-{
-	SDL_RenderSetViewport(renderer, nullptr);
-	SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
-	SDL_RenderClear(renderer);
-	SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
-}
-
-void RenderInterface_SDL::EndFrame() {}
+RenderInterface_SDL::RenderInterface_SDL() {}
 
 void RenderInterface_SDL::RenderGeometry(Rml::Vertex* vertices, int num_vertices, int* indices, int num_indices, const Rml::TextureHandle texture,
 	const Rml::Vector2f& translation)
@@ -153,3 +147,23 @@ void RenderInterface_SDL::ReleaseTexture(Rml::TextureHandle texture_handle)
 {
 	SDL_DestroyTexture((SDL_Texture*)texture_handle);
 }
+
+void RmlSDLrenderer::Initialize(SDL_Renderer* in_renderer)
+{
+	renderer = in_renderer;
+}
+
+void RmlSDLrenderer::Shutdown()
+{
+	renderer = nullptr;
+}
+
+void RmlSDLrenderer::BeginFrame()
+{
+	SDL_RenderSetViewport(renderer, nullptr);
+	SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+	SDL_RenderClear(renderer);
+	SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
+}
+
+void RmlSDLrenderer::EndFrame() {}

@@ -4,7 +4,7 @@
  * For the latest information, see http://github.com/mikke89/RmlUi
  *
  * Copyright (c) 2008-2010 CodePoint Ltd, Shift Technology Ltd
- * Copyright (c) 2019-2023 The RmlUi Team, and contributors
+ * Copyright (c) 2019 The RmlUi Team, and contributors
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -30,239 +30,183 @@
 #include "RmlUi_Platform_GLFW.h"
 #include "RmlUi_Renderer_GL3.h"
 #include <RmlUi/Core/Context.h>
-#include <RmlUi/Core/Input.h>
-#include <RmlUi/Core/Profiling.h>
+#include <RmlUi/Core/Core.h>
+#include <RmlUi/Core/ElementDocument.h>
+#include <RmlUi/Debugger/Debugger.h>
 #include <GLFW/glfw3.h>
 
-static void SetupCallbacks(GLFWwindow* window);
+static Rml::UniquePtr<RenderInterface_GL3> render_interface;
+static Rml::UniquePtr<SystemInterface_GLFW> system_interface;
 
-static void LogErrorFromGLFW(int error, const char* description)
+static GLFWwindow* window = nullptr;
+static Rml::Context* context = nullptr;
+
+static void SetupBackendCallbacks();
+static void ProcessKeyDown(int glfw_key, int glfw_action, int glfw_mods);
+
+bool Backend::InitializeInterfaces()
 {
-	Rml::Log::Message(Rml::Log::LT_ERROR, "GLFW error (0x%x): %s", error, description);
+	RMLUI_ASSERT(!system_interface && !render_interface);
+
+	system_interface = Rml::MakeUnique<SystemInterface_GLFW>();
+	Rml::SetSystemInterface(system_interface.get());
+
+	render_interface = Rml::MakeUnique<RenderInterface_GL3>();
+	Rml::SetRenderInterface(render_interface.get());
+
+	return true;
 }
 
-/**
-    Global data used by this backend.
-
-    Lifetime governed by the calls to Backend::Initialize() and Backend::Shutdown().
- */
-struct BackendData {
-	SystemInterface_GLFW system_interface;
-	RenderInterface_GL3 render_interface;
-	GLFWwindow* window = nullptr;
-	int glfw_active_modifiers = 0;
-	bool context_dimensions_dirty = true;
-
-	// Arguments set during event processing and nulled otherwise.
-	Rml::Context* context = nullptr;
-	KeyDownCallback key_down_callback = nullptr;
-};
-static Rml::UniquePtr<BackendData> data;
-
-bool Backend::Initialize(const char* name, int width, int height, bool allow_resize)
+void Backend::ShutdownInterfaces()
 {
-	RMLUI_ASSERT(!data);
+	render_interface.reset();
+	system_interface.reset();
+}
 
-	glfwSetErrorCallback(LogErrorFromGLFW);
-
-	if (!glfwInit())
+bool Backend::OpenWindow(const char* name, int width, int height, bool allow_resize)
+{
+	if (!RmlGLFW::Initialize())
 		return false;
 
-	// Set window hints for OpenGL 3.3 Core context creation.
 	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
 	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
 	glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 	glfwWindowHint(GLFW_DOUBLEBUFFER, GLFW_TRUE);
 
-	// Request stencil buffer of at least 8-bit size to supporting clipping on transformed elements.
-	glfwWindowHint(GLFW_STENCIL_BITS, 8);
-
-	// Enable MSAA for better-looking visuals, especially when transforms are applied.
-	glfwWindowHint(GLFW_SAMPLES, 2);
-
-	// Apply window properties and create it.
-	glfwWindowHint(GLFW_RESIZABLE, allow_resize ? GLFW_TRUE : GLFW_FALSE);
-	glfwWindowHint(GLFW_SCALE_TO_MONITOR, GLFW_TRUE);
-
-    glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
-
-	GLFWwindow* window = glfwCreateWindow(width, height, name, nullptr, nullptr);
-	if (!window)
+	if (!RmlGLFW::CreateWindow(name, width, height, allow_resize, window))
 		return false;
 
 	glfwMakeContextCurrent(window);
 	glfwSwapInterval(1);
 
-	// Load the OpenGL functions.
-	Rml::String renderer_message;
-	if (!RmlGL3::Initialize(&renderer_message))
+	if (!RmlGL3::Initialize())
+	{
+		RmlGLFW::CloseWindow();
 		return false;
+	}
+	RmlGL3::SetViewport(width, height);
 
-	// Construct the system and render interface, this includes compiling all the shaders. If this fails, it is likely an error in the shader code.
-	data = Rml::MakeUnique<BackendData>();
-	if (!data || !data->render_interface)
-		return false;
-
-	data->window = window;
-	data->system_interface.SetWindow(window);
-	data->system_interface.LogMessage(Rml::Log::LT_INFO, renderer_message);
-
-	// The window size may have been scaled by DPI settings, get the actual pixel size.
-	glfwGetFramebufferSize(window, &width, &height);
-	data->render_interface.SetViewport(width, height);
-
-	// Receive num lock and caps lock modifiers for proper handling of numpad inputs in text fields.
-	glfwSetInputMode(window, GLFW_LOCK_KEY_MODS, GLFW_TRUE);
-
-	// Setup the input and window event callback functions.
-	SetupCallbacks(window);
+	SetupBackendCallbacks();
 
 	return true;
 }
 
-void Backend::Shutdown()
+void Backend::CloseWindow()
 {
-	RMLUI_ASSERT(data);
-	glfwDestroyWindow(data->window);
-	data.reset();
 	RmlGL3::Shutdown();
-	glfwTerminate();
+
+	RmlGLFW::CloseWindow();
+	RmlGLFW::Shutdown();
+
+	window = nullptr;
 }
 
-Rml::SystemInterface* Backend::GetSystemInterface()
+void Backend::EventLoop(ShellIdleFunction idle_function)
 {
-	RMLUI_ASSERT(data);
-	return &data->system_interface;
-}
-
-Rml::RenderInterface* Backend::GetRenderInterface()
-{
-	RMLUI_ASSERT(data);
-	return &data->render_interface;
-}
-
-bool Backend::ProcessEvents(Rml::Context* context, KeyDownCallback key_down_callback, bool power_save)
-{
-	RMLUI_ASSERT(data && context);
-
-	// The initial window size may have been affected by system DPI settings, apply the actual pixel size and dp-ratio to the context.
-	if (data->context_dimensions_dirty)
+	while (!glfwWindowShouldClose(window))
 	{
-		data->context_dimensions_dirty = false;
-
-		Rml::Vector2i window_size;
-		float dp_ratio = 1.f;
-		glfwGetFramebufferSize(data->window, &window_size.x, &window_size.y);
-		glfwGetWindowContentScale(data->window, &dp_ratio, nullptr);
-
-		context->SetDimensions(window_size);
-		context->SetDensityIndependentPixelRatio(dp_ratio);
-	}
-
-	data->context = context;
-	data->key_down_callback = key_down_callback;
-
-	if (power_save)
-		glfwWaitEventsTimeout(Rml::Math::Min(context->GetNextUpdateDelay(), 10.0));
-	else
 		glfwPollEvents();
-
-	data->context = nullptr;
-	data->key_down_callback = nullptr;
-
-	const bool result = !glfwWindowShouldClose(data->window);
-	glfwSetWindowShouldClose(data->window, GLFW_FALSE);
-	return result;
+		idle_function();
+	}
 }
 
 void Backend::RequestExit()
 {
-	RMLUI_ASSERT(data);
-	glfwSetWindowShouldClose(data->window, GLFW_TRUE);
+	glfwSetWindowShouldClose(window, GLFW_TRUE);
 }
 
 void Backend::BeginFrame()
 {
-	RMLUI_ASSERT(data);
-	data->render_interface.BeginFrame();
-	data->render_interface.Clear();
+	RmlGL3::BeginFrame();
+	RmlGL3::Clear();
 }
 
 void Backend::PresentFrame()
 {
-	RMLUI_ASSERT(data);
-	data->render_interface.EndFrame();
-	glfwSwapBuffers(data->window);
-
-	// Optional, used to mark frames during performance profiling.
-	RMLUI_FrameMark;
+	RmlGL3::EndFrame();
+	glfwSwapBuffers(window);
 }
 
-static void SetupCallbacks(GLFWwindow* window)
+void Backend::SetContext(Rml::Context* new_context)
 {
-	RMLUI_ASSERT(data);
+	context = new_context;
+	RmlGLFW::SetContext(new_context);
+}
 
-	// Key input
-	glfwSetKeyCallback(window, [](GLFWwindow* /*window*/, int glfw_key, int /*scancode*/, int glfw_action, int glfw_mods) {
-		if (!data->context)
-			return;
+static void SetupBackendCallbacks()
+{
+	// Override the default key event callback to add global shortcuts for the samples.
+	glfwSetKeyCallback(window, [](GLFWwindow* /*window*/, int key, int /*scancode*/, int action, int mods) {
+		RmlGLFW::SetActiveModifiers(mods);
 
-		// Store the active modifiers for later because GLFW doesn't provide them in the callbacks to the mouse input events.
-		data->glfw_active_modifiers = glfw_mods;
-
-		// Override the default key event callback to add global shortcuts for the samples.
-		Rml::Context* context = data->context;
-		KeyDownCallback key_down_callback = data->key_down_callback;
-
-		switch (glfw_action)
+		switch (action)
 		{
 		case GLFW_PRESS:
 		case GLFW_REPEAT:
-		{
-			const Rml::Input::KeyIdentifier key = RmlGLFW::ConvertKey(glfw_key);
-			const int key_modifier = RmlGLFW::ConvertKeyModifiers(glfw_mods);
-			float dp_ratio = 1.f;
-			glfwGetWindowContentScale(data->window, &dp_ratio, nullptr);
-
-			// See if we have any global shortcuts that take priority over the context.
-			if (key_down_callback && !key_down_callback(context, key, key_modifier, dp_ratio, true))
-				break;
-			// Otherwise, hand the event over to the context by calling the input handler as normal.
-			if (!RmlGLFW::ProcessKeyCallback(context, glfw_key, glfw_action, glfw_mods))
-				break;
-			// The key was not consumed by the context either, try keyboard shortcuts of lower priority.
-			if (key_down_callback && !key_down_callback(context, key, key_modifier, dp_ratio, false))
-				break;
-		}
-		break;
-		case GLFW_RELEASE: RmlGLFW::ProcessKeyCallback(context, glfw_key, glfw_action, glfw_mods); break;
+			ProcessKeyDown(key, action, mods);
+			break;
+		case GLFW_RELEASE:
+			RmlGLFW::ProcessKeyCallback(key, action, mods);
+			break;
 		}
 	});
 
-	glfwSetCharCallback(window, [](GLFWwindow* /*window*/, unsigned int codepoint) { RmlGLFW::ProcessCharCallback(data->context, codepoint); });
-
-	glfwSetCursorEnterCallback(window, [](GLFWwindow* /*window*/, int entered) { RmlGLFW::ProcessCursorEnterCallback(data->context, entered); });
-
-	// Mouse input
-	glfwSetCursorPosCallback(window, [](GLFWwindow* window, double xpos, double ypos) {
-		RmlGLFW::ProcessCursorPosCallback(data->context, window, xpos, ypos, data->glfw_active_modifiers);
-	});
-
-	glfwSetMouseButtonCallback(window, [](GLFWwindow* /*window*/, int button, int action, int mods) {
-		data->glfw_active_modifiers = mods;
-		RmlGLFW::ProcessMouseButtonCallback(data->context, button, action, mods);
-	});
-
-	glfwSetScrollCallback(window, [](GLFWwindow* /*window*/, double /*xoffset*/, double yoffset) {
-		RmlGLFW::ProcessScrollCallback(data->context, yoffset, data->glfw_active_modifiers);
-	});
-
-	// Window events
+	// Override the framebuffer size callback, so that we can set the OpenGL viewport as well.
 	glfwSetFramebufferSizeCallback(window, [](GLFWwindow* /*window*/, int width, int height) {
-		data->render_interface.SetViewport(width, height);
-		RmlGLFW::ProcessFramebufferSizeCallback(data->context, width, height);
+		RmlGL3::SetViewport(width, height);
+		RmlGLFW::ProcessFramebufferSizeCallback(width, height);
 	});
+}
 
-	glfwSetWindowContentScaleCallback(window,
-		[](GLFWwindow* /*window*/, float xscale, float /*yscale*/) { RmlGLFW::ProcessContentScaleCallback(data->context, xscale); });
+static void ProcessKeyDown(int glfw_key, int glfw_action, int glfw_mods)
+{
+	if (!context)
+		return;
+
+	Rml::Input::KeyIdentifier key_identifier = RmlGLFW::ConvertKey(glfw_key);
+	const int key_modifier_state = RmlGLFW::ConvertKeyModifiers(glfw_mods);
+
+	// Toggle debugger and set dp-ratio using Ctrl +/-/0 keys. These global shortcuts take priority.
+	if (key_identifier == Rml::Input::KI_F8)
+	{
+		Rml::Debugger::SetVisible(!Rml::Debugger::IsVisible());
+	}
+	else if (key_identifier == Rml::Input::KI_0 && key_modifier_state & Rml::Input::KM_CTRL)
+	{
+		context->SetDensityIndependentPixelRatio(1.f);
+	}
+	else if (key_identifier == Rml::Input::KI_1 && key_modifier_state & Rml::Input::KM_CTRL)
+	{
+		context->SetDensityIndependentPixelRatio(1.f);
+	}
+	else if ((key_identifier == Rml::Input::KI_OEM_MINUS || key_identifier == Rml::Input::KI_SUBTRACT) && key_modifier_state & Rml::Input::KM_CTRL)
+	{
+		const float new_dp_ratio = Rml::Math::Max(context->GetDensityIndependentPixelRatio() / 1.2f, 0.5f);
+		context->SetDensityIndependentPixelRatio(new_dp_ratio);
+	}
+	else if ((key_identifier == Rml::Input::KI_OEM_PLUS || key_identifier == Rml::Input::KI_ADD) && key_modifier_state & Rml::Input::KM_CTRL)
+	{
+		const float new_dp_ratio = Rml::Math::Min(context->GetDensityIndependentPixelRatio() * 1.2f, 2.5f);
+		context->SetDensityIndependentPixelRatio(new_dp_ratio);
+	}
+	else
+	{
+		// No global shortcuts detected, submit the key to platform handler.
+		if (RmlGLFW::ProcessKeyCallback(glfw_key, glfw_action, glfw_mods))
+		{
+			// The key was not consumed, check for shortcuts that are of lower priority.
+			if (key_identifier == Rml::Input::KI_R && key_modifier_state & Rml::Input::KM_CTRL)
+			{
+				for (int i = 0; i < context->GetNumDocuments(); i++)
+				{
+					Rml::ElementDocument* document = context->GetDocument(i);
+					const Rml::String& src = document->GetSourceURL();
+					if (src.size() > 4 && src.substr(src.size() - 4) == ".rml")
+					{
+						document->ReloadStyleSheet();
+					}
+				}
+			}
+		}
+	}
 }

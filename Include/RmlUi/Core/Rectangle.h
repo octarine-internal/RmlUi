@@ -4,7 +4,7 @@
  * For the latest information, see http://github.com/mikke89/RmlUi
  *
  * Copyright (c) 2008-2010 CodePoint Ltd, Shift Technology Ltd
- * Copyright (c) 2019-2023 The RmlUi Team, and contributors
+ * Copyright (c) 2019 The RmlUi Team, and contributors
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -48,7 +48,7 @@ public:
 	static inline Rectangle FromPositionSize(Vector2Type pos, Vector2Type size) { return Rectangle(pos, pos + size); }
 	static inline Rectangle FromSize(Vector2Type size) { return Rectangle(Vector2Type(), size); }
 	static inline Rectangle FromCorners(Vector2Type top_left, Vector2Type bottom_right) { return Rectangle(top_left, bottom_right); }
-	static inline Rectangle MakeInvalid() { return Rectangle(Vector2Type(0), Vector2Type(-1)); }
+	static inline Rectangle CreateInvalid() { return Rectangle(Vector2Type(0), Vector2Type(-1)); }
 
 	Vector2Type Position() const { return p0; }
 	Vector2Type Size() const { return p1 - p0; }
@@ -91,7 +91,7 @@ public:
 		p0 = Math::Max(p0, other.p0);
 		p1 = Math::Max(Math::Min(p1, other.p1), p0);
 	}
-	void IntersectIfValid(Rectangle other)
+	void IntersectValid(Rectangle other)
 	{
 		if (!Valid())
 			*this = other;
@@ -113,11 +113,10 @@ public:
 		return Rectangle<U>::FromCorners(static_cast<Vector2<U>>(p0), static_cast<Vector2<U>>(p1));
 	}
 
-	Vector2Type p0; // Minimum coordinates for a valid rectangle.
-	Vector2Type p1; // Maximum coordinates for a valid rectangle.
-
 private:
 	Rectangle(Vector2Type p0, Vector2Type p1) : p0(p0), p1(p1) {}
+
+	Vector2Type p0, p1;
 };
 
 } // namespace Rml

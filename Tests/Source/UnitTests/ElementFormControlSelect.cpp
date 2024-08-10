@@ -4,7 +4,7 @@
  * For the latest information, see http://github.com/mikke89/RmlUi
  *
  * Copyright (c) 2008-2010 CodePoint Ltd, Shift Technology Ltd
- * Copyright (c) 2019-2023 The RmlUi Team, and contributors
+ * Copyright (c) 2019 The RmlUi Team, and contributors
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -28,9 +28,9 @@
 
 #include "../Common/TestsShell.h"
 #include <RmlUi/Core/Context.h>
-#include <RmlUi/Core/DataModelHandle.h>
 #include <RmlUi/Core/Element.h>
 #include <RmlUi/Core/ElementDocument.h>
+#include <RmlUi/Core/DataModelHandle.h>
 #include <RmlUi/Core/Elements/ElementFormControlSelect.h>
 #include <RmlUi/Core/EventListener.h>
 #include <doctest.h>
@@ -84,6 +84,7 @@ static String GetSelectValueRml(ElementFormControlSelect* select_element)
 	return String();
 }
 
+
 TEST_CASE("form.select.value")
 {
 	Context* context = TestsShell::GetContext();
@@ -104,8 +105,8 @@ TEST_CASE("form.select.value")
 				<option>C</option>
 				<option>D</option>
 			</select>
-			)",
-			"", "A"},
+			)", "", "A"
+		},
 
 		{
 			R"(
@@ -115,8 +116,8 @@ TEST_CASE("form.select.value")
 				<option>C</option>
 				<option>D</option>
 			</select>
-			)",
-			"a", "A"},
+			)", "a", "A"
+		},
 
 		{
 			R"(
@@ -126,8 +127,8 @@ TEST_CASE("form.select.value")
 				<option>C</option>
 				<option>D</option>
 			</select>
-			)",
-			"", "A"},
+			)", "", "A"
+		},
 
 		{
 			R"(
@@ -137,8 +138,8 @@ TEST_CASE("form.select.value")
 				<option value="c">C</option>
 				<option value="d">D</option>
 			</select>
-			)",
-			"c", "C"},
+			)", "c", "C"
+		},
 
 		{
 			R"(
@@ -148,8 +149,8 @@ TEST_CASE("form.select.value")
 				<option value="c">C</option>
 				<option value="d" selected>D</option>
 			</select>
-			)",
-			"d", "D"},
+			)", "d", "D"
+		},
 
 		{
 			R"(
@@ -159,8 +160,8 @@ TEST_CASE("form.select.value")
 				<option value="c">C</option>
 				<option value="d">D</option>
 			</select>
-			)",
-			"a", "A"},
+			)", "a", "A"
+		},
 
 		{
 			R"(
@@ -170,8 +171,8 @@ TEST_CASE("form.select.value")
 				<option value="c">C</option>
 				<option value="d" selected>D</option>
 			</select>
-			)",
-			"d", "D"},
+			)", "d", "D"
+		},
 
 		{
 			R"(
@@ -181,8 +182,8 @@ TEST_CASE("form.select.value")
 				<option value="c" selected>C</option>
 				<option value="d">D</option>
 			</select>
-			)",
-			"c", "C"},
+			)", "c", "C"
+		},
 	};
 
 	ElementDocument* document = context->LoadDocumentFromMemory(basic_doc_rml);
@@ -216,6 +217,7 @@ TEST_CASE("form.select.value")
 	TestsShell::ShutdownShell();
 }
 
+
 TEST_CASE("form.select.databinding")
 {
 	Context* context = TestsShell::GetContext();
@@ -229,7 +231,7 @@ TEST_CASE("form.select.databinding")
 
 	int selected_index = 2;
 	String selected_value = "b";
-	Vector<String> values = {"a", "b", "c", "d"};
+	Vector<String> values = { "a", "b", "c", "d" };
 
 	Test tests[] = {
 		{
@@ -240,8 +242,8 @@ TEST_CASE("form.select.databinding")
 				<option value="2">C</option>
 				<option value="3">D</option>
 			</select>
-			)",
-			"2", "C"},
+			)", "2", "C"
+		},
 
 		{
 			R"(
@@ -251,8 +253,8 @@ TEST_CASE("form.select.databinding")
 				<option value="c">C</option>
 				<option value="d">D</option>
 			</select>
-			)",
-			"b", "B"},
+			)", "b", "B"
+		},
 
 		{
 			R"(
@@ -262,48 +264,40 @@ TEST_CASE("form.select.databinding")
 				<option value="c" data-attrif-selected="selected_value == 'c'">C</option>
 				<option value="d" data-attrif-selected="selected_value == 'd'">D</option>
 			</select>
-			)",
-			"b", "B"},
+			)", "b", "B"
+		},
 
 		{
 			R"(
 			<select>
 				 <option data-for="s : subjects" data-attr-value="s" data-attrif-selected="s == selected_value">{{ s | to_upper }}</option>
 			</select>
-			)",
-			"b", "B"},
+			)", "b", "B"
+		},
 
 		{
 			R"(
 			<select>
 				 <option data-for="s : subjects" data-attr-value="it_index" data-attrif-selected="it_index == selected_index">{{ s | to_upper }}</option>
 			</select>
-			)",
-			"2", "C"},
+			)", "2", "C"
+		},
 
 		{
 			R"(
 			<select data-value="selected_value">
 				 <option data-for="s : subjects" data-attr-value="s">{{ s | to_upper }}</option>
 			</select>
-			)",
-			"b", "B"},
+			)", "b", "B"
+		},
 
 		{
 			R"(
 			<select data-value="selected_index">
 				 <option data-for="s : subjects" data-attr-value="it_index">{{ s | to_upper }}</option>
 			</select>
-			)",
-			"2", "C"},
-
-		{
-			R"(
-			<select data-value="selected_index">
-				 <option data-for="s : subjects" data-attr-value="it_index"><p data-rml="s | to_upper"></p></option>
-			</select>
-			)",
-			"2", "<p data-rml=\"s | to_upper\">C</p>"},
+			)", "2", "C"
+		},
 	};
 
 	DataModelConstructor constructor = context->CreateDataModel("select-test");
@@ -345,6 +339,7 @@ TEST_CASE("form.select.databinding")
 	TestsShell::ShutdownShell();
 }
 
+
 TEST_CASE("form.select.data-for")
 {
 	Context* context = TestsShell::GetContext();
@@ -357,7 +352,7 @@ TEST_CASE("form.select.data-for")
 	};
 
 	String selected_value = "b";
-	Vector<String> values = {"a", "b", "c", "d"};
+	Vector<String> values = { "a", "b", "c", "d" };
 
 	DataModelConstructor constructor = context->CreateDataModel("select-test");
 	constructor.RegisterArray<Vector<String>>();
@@ -368,6 +363,7 @@ TEST_CASE("form.select.data-for")
 	DataModelHandle handle = constructor.GetModelHandle();
 
 	{
+
 		const String select_rml = R"(
 			<select data-value="selected_value">
 				 <option data-for="s : subjects" data-attr-value="s">{{ s | to_upper }}</option>
@@ -389,7 +385,7 @@ TEST_CASE("form.select.data-for")
 		REQUIRE(select_element);
 
 		{
-			// TestsShell::RenderLoop();
+			//TestsShell::RenderLoop();
 
 			const String value = select_element->GetValue();
 			const int selected_index = select_element->GetSelection();
@@ -404,7 +400,7 @@ TEST_CASE("form.select.data-for")
 			selected_value = "d";
 			handle.DirtyVariable("selected_value");
 			context->Update();
-			// TestsShell::RenderLoop();
+			//TestsShell::RenderLoop();
 
 			const String value = select_element->GetValue();
 			const int selected_index = select_element->GetSelection();

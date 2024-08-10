@@ -4,7 +4,7 @@
  * For the latest information, see http://github.com/mikke89/RmlUi
  *
  * Copyright (c) 2008-2010 CodePoint Ltd, Shift Technology Ltd
- * Copyright (c) 2019-2023 The RmlUi Team, and contributors
+ * Copyright (c) 2019 The RmlUi Team, and contributors
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -54,8 +54,11 @@ PropertyParserNumber::PropertyParserNumber(Units units, Unit zero_unit) : units(
 
 PropertyParserNumber::~PropertyParserNumber() {}
 
-bool PropertyParserNumber::ParseValue(Property& property, const String& value, const ParameterMap& /*parameters*/) const
+// Called to parse a RCSS number declaration.
+bool PropertyParserNumber::ParseValue(Property& property, const String& value, const ParameterMap& RMLUI_UNUSED_PARAMETER(parameters)) const
 {
+	RMLUI_UNUSED(parameters);
+
 	// Find the beginning of the unit string in 'value'.
 	size_t unit_pos = 0;
 	for (size_t i = value.size(); i--;)

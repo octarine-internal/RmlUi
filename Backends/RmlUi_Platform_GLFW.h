@@ -4,7 +4,7 @@
  * For the latest information, see http://github.com/mikke89/RmlUi
  *
  * Copyright (c) 2008-2010 CodePoint Ltd, Shift Technology Ltd
- * Copyright (c) 2019-2023 The RmlUi Team, and contributors
+ * Copyright (c) 2019 The RmlUi Team, and contributors
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -36,50 +36,42 @@
 
 class SystemInterface_GLFW : public Rml::SystemInterface {
 public:
-	SystemInterface_GLFW();
-	~SystemInterface_GLFW();
-
-	// Optionally, provide or change the window to be used for setting the mouse cursors and clipboard text.
-	void SetWindow(GLFWwindow* window);
-
-	// -- Inherited from Rml::SystemInterface  --
-
 	double GetElapsedTime() override;
 
 	void SetMouseCursor(const Rml::String& cursor_name) override;
 
 	void SetClipboardText(const Rml::String& text) override;
 	void GetClipboardText(Rml::String& text) override;
-
-private:
-	GLFWwindow* window = nullptr;
-
-	GLFWcursor* cursor_pointer = nullptr;
-	GLFWcursor* cursor_cross = nullptr;
-	GLFWcursor* cursor_text = nullptr;
 };
 
-/**
-    Optional helper functions for the GLFW plaform.
- */
 namespace RmlGLFW {
 
-// The following optional functions are intended to be called from their respective GLFW callback functions. The functions expect arguments passed
-// directly from GLFW, in addition to the RmlUi context to apply the input or sizing event on. The input callbacks return true if the event is
-// propagating, i.e. was not handled by the context.
-bool ProcessKeyCallback(Rml::Context* context, int key, int action, int mods);
-bool ProcessCharCallback(Rml::Context* context, unsigned int codepoint);
-bool ProcessCursorEnterCallback(Rml::Context* context, int entered);
-bool ProcessCursorPosCallback(Rml::Context* context, GLFWwindow* window, double xpos, double ypos, int mods);
-bool ProcessMouseButtonCallback(Rml::Context* context, int button, int action, int mods);
-bool ProcessScrollCallback(Rml::Context* context, double yoffset, int mods);
-void ProcessFramebufferSizeCallback(Rml::Context* context, int width, int height);
-void ProcessContentScaleCallback(Rml::Context* context, float xscale);
+bool Initialize();
+void Shutdown();
 
-// Converts the GLFW key to RmlUi key.
+// Create and open the the window and setup default callbacks. The provided width and height determines the logical size of the window, while the
+// returned width and height is the actual used framebuffer pixel size which may be different due to monitor DPI-settings.
+bool CreateWindow(const char* name, int& inout_width, int& inout_height, bool allow_resize, GLFWwindow*& out_window);
+void CloseWindow();
+
+// Set the context to be used for input processing, window sizing, and content scaling (dp-ratio).
+void SetContext(Rml::Context* context);
+
+// During window creation, GLFW is setup with the following default callback functions. The callbacks can be overridden using the GLFW API when you
+// need to for your own application. Then, to reinstate the default behavior on the context you may wish to call these functions manually. Arguments
+// should be passed directly from the GLFW callbacks. The callbacks return true if the event is propagating, ie. was not handled by the context.
+bool ProcessKeyCallback(int key, int action, int mods);
+bool ProcessCharCallback(unsigned int codepoint);
+bool ProcessCursorPosCallback(double xpos, double ypos);
+bool ProcessMouseButtonCallback(int button, int action, int mods);
+bool ProcessScrollCallback(double yoffset);
+void ProcessFramebufferSizeCallback(int width, int height);
+void ProcessContentScaleCallback(float xscale);
+
+// When overriding the 'KeyCallback' or 'MouseButtonCallback', this should be called with the new modifers provided by GLFW.
+void SetActiveModifiers(int glfw_mods);
+
 Rml::Input::KeyIdentifier ConvertKey(int glfw_key);
-
-// Converts the GLFW key modifiers to RmlUi key modifiers.
 int ConvertKeyModifiers(int glfw_mods);
 
 } // namespace RmlGLFW

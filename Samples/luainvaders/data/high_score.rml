@@ -9,7 +9,7 @@
 			height: 440dp;
 			margin: auto;
 		}
-
+		
 		div#title_bar div#icon
 		{
 			decorator: image( icon-hiscore );
@@ -53,7 +53,7 @@ function HighScore.OnKeyDown(event)
 end
 	</script>
 </head>
-<body template="luawindow" onload="Window.OnWindowLoad(document) Game.SubmitHighScore()" onkeydown="if Window.EscapePressed(event) then Window.LoadMenu('main_menu',document) end">
+<body template="luawindow" onload="Window.OnWindowLoad(document) Game.SubmitHighScore()">
 	<table data-model="high_scores">
 		<thead>
 			<tr>
@@ -81,9 +81,10 @@ end
 					{{score.score}}
 				</td>
 			</tr>
-			<tr>
-				<td data-if="scores.size == 0" colspan="4" style="vertical-align: middle"><em>No scores recorded. Play a game!</em></td>
+			<tr data-if="scores.size == 0">
+				<td colspan="4" style="vertical-align: middle"><em>No scores recorded. Play a game!</em></td>
 			</tr>
+			<tr data-if="scores.size > 0"/>
 		</tbody>
 	</table>
 	<button onclick="Game.SetHighScoreName('Anon') Window.LoadMenu('main_menu',document)">Main Menu</button>

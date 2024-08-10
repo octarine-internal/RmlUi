@@ -4,7 +4,7 @@
  * For the latest information, see http://github.com/mikke89/RmlUi
  *
  * Copyright (c) 2008-2010 CodePoint Ltd, Shift Technology Ltd
- * Copyright (c) 2019-2023 The RmlUi Team, and contributors
+ * Copyright (c) 2019 The RmlUi Team, and contributors
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -15,7 +15,7 @@
  *
  * The above copyright notice and this permission notice shall be included in
  * all copies or substantial portions of the Software.
- *
+ * 
  * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
  * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
  * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -32,7 +32,6 @@
 #include "../../../Include/RmlUi/Core/EventListener.h"
 #include "../../../Include/RmlUi/Core/Geometry.h"
 #include "../../../Include/RmlUi/Core/Vertex.h"
-#include <float.h>
 
 namespace Rml {
 
@@ -40,20 +39,20 @@ class ElementText;
 class ElementFormControl;
 
 /**
-    An abstract widget for editing and navigating around a text field.
+	An abstract widget for editing and navigating around a text field.
 
-    @author Peter Curry
+	@author Peter Curry
  */
 
-class WidgetTextInput : public EventListener {
+class WidgetTextInput : public EventListener
+{
 public:
 	WidgetTextInput(ElementFormControl* parent);
 	virtual ~WidgetTextInput();
 
 	/// Sets the value of the text field.
 	/// @param[in] value The new value to set on the text field.
-	/// @note The value will be sanitized and synchronized with the element's value attribute.
-	void SetValue(String value);
+	virtual void SetValue(const String& value);
 
 	/// Sets the maximum length (in characters) of this text field.
 	/// @param[in] max_length The new maximum length of the text field. A number lower than zero will mean infinite characters.
@@ -64,24 +63,10 @@ public:
 	/// Returns the current length (in characters) of this text field.
 	int GetLength() const;
 
-	/// Selects all text.
-	void Select();
-	/// Selects the text in the given character range.
-	/// @param[in] selection_start The first character to be selected.
-	/// @param[in] selection_end The first character *after* the selection.
-	void SetSelectionRange(int selection_start, int selection_end);
-	/// Retrieves the selection range and text.
-	/// @param[out] selection_start The first character selected.
-	/// @param[out] selection_end The first character *after* the selection.
-	/// @param[out] selected_text The selected text.
-	void GetSelection(int* selection_start, int* selection_end, String* selected_text) const;
-
 	/// Update the colours of the selected text.
 	void UpdateSelectionColours();
 	/// Generates the text cursor.
 	void GenerateCursor();
-	/// Force text formatting on the next layout update.
-	void ForceFormattingOnNextLayout();
 
 	/// Updates the cursor, if necessary.
 	void OnUpdate();
@@ -92,10 +77,13 @@ public:
 	/// Called when the parent element's size changes.
 	void OnResize();
 
+	/// Returns the input element's underlying text element.
+	ElementText* GetTextElement();
+	/// Returns the input element's maximum allowed text dimensions.
+	Vector2f GetTextDimensions() const;
+
 protected:
 	enum class CursorMovement { Begin = -4, BeginLine = -3, PreviousWord = -2, Left = -1, Right = 1, NextWord = 2, EndLine = 3, End = 4 };
-
-	float GetAlignmentSpecificTextOffset(const char* p_begin, int line_index) const;
 
 	/// Processes the "keydown" and "textinput" event to write to the input field, and the "focus" and
 	/// "blur" to set the state of the cursor.
@@ -109,58 +97,47 @@ protected:
 	/// @param[in] direction Movement of cursor for deletion.
 	/// @return True if a character was deleted, false otherwise.
 	bool DeleteCharacters(CursorMovement direction);
-
-	/// Removes any invalid characters from the string.
-	virtual void SanitizeValue(String& value) = 0;
-	/// Transforms the displayed value of the text box, typically used for password fields.
-	/// @note Only use this for transforming characters, do not modify the length of the string.
-	virtual void TransformValue(String& value);
+	/// Returns true if the given character is permitted in the input field, false if not.
+	/// @param[in] character The character to validate.
+	/// @return True if the character is allowed, false if not.
+	virtual bool IsCharacterValid(char character) = 0;
 	/// Called when the user pressed enter.
 	virtual void LineBreak() = 0;
 
+	/// Returns the absolute index of the cursor.
+	int GetCursorIndex() const;
+
 	/// Gets the parent element containing the widget.
 	Element* GetElement() const;
-
-	/// Returns true if the text input element is currently focused.
-	bool IsFocused() const;
 
 	/// Dispatches a change event to the widget's element.
 	void DispatchChangeEvent(bool linebreak = false);
 
 private:
-	/// Returns the displayed value of the text field.
-	/// @note For password fields this would only return the displayed asterisks '****', while the attribute value below contains the underlying text.
-	const String& GetValue() const;
-	/// Returns the underlying text from the element's value attribute.
-	String GetAttributeValue() const;
-
+	
 	/// Moves the cursor along the current line.
 	/// @param[in] movement Cursor movement operation.
 	/// @param[in] select True if the movement will also move the selection cursor, false if not.
-	/// @param[out] out_of_bounds Set to true if the resulting line position is out of bounds, false if not.
-	/// @return True if selection was changed.
-	bool MoveCursorHorizontal(CursorMovement movement, bool select, bool& out_of_bounds);
+	void MoveCursorHorizontal(CursorMovement movement, bool select);
 	/// Moves the cursor up and down the text field.
 	/// @param[in] x How far to move the cursor.
 	/// @param[in] select True if the movement will also move the selection cursor, false if not.
-	/// @param[out] out_of_bounds Set to true if the resulting line position is out of bounds, false if not.
-	/// @return True if selection was changed.
-	bool MoveCursorVertical(int distance, bool select, bool& out_of_bounds);
+	void MoveCursorVertical(int distance, bool select);
 	// Move the cursor to utf-8 boundaries, in case it was moved into the middle of a multibyte character.
 	/// @param[in] forward True to seek forward, else back.
 	void MoveCursorToCharacterBoundaries(bool forward);
 	// Expands the cursor, selecting the current word or nearby whitespace.
 	void ExpandSelection();
 
-	/// Returns the relative indices from the current absolute index.
-	void GetRelativeCursorIndices(int& out_cursor_line_index, int& out_cursor_character_index) const;
-	/// Sets the absolute cursor index from the given relative indices.
-	void SetCursorFromRelativeIndices(int line_index, int character_index);
+	/// Updates the absolute cursor index from the relative cursor indices.
+	void UpdateAbsoluteCursor();
+	/// Updates the relative cursor indices from the absolute cursor index.
+	void UpdateRelativeCursor();
 
 	/// Calculates the line index under a specific vertical position.
 	/// @param[in] position The position to query.
 	/// @return The index of the line under the mouse cursor.
-	int CalculateLineIndex(float position) const;
+	int CalculateLineIndex(float position);
 	/// Calculates the character index along a line under a specific horizontal position.
 	/// @param[in] line_index The line to query.
 	/// @param[in] position The position to query.
@@ -176,22 +153,17 @@ private:
 	/// Formats the element, laying out the text and inserting scrollbars as appropriate.
 	void FormatElement();
 	/// Formats the input element's text field.
-	/// @param[in] height_constraint Abort formatting when the formatted size grows larger than this height.
 	/// @return The content area of the element.
-	Vector2f FormatText(float height_constraint = FLT_MAX);
+	Vector2f FormatText();
 
 	/// Updates the position to render the cursor.
-	/// @param[in] update_ideal_cursor_position Generally should be true on horizontal movement and false on vertical movement.
-	void UpdateCursorPosition(bool update_ideal_cursor_position);
+	void UpdateCursorPosition();
 
 	/// Expand or shrink the text selection to the position of the cursor.
-	/// @param[in] selecting True if the new position of the cursor should expand / contract the selection area, false if it should only set the
-	/// anchor for future selections.
-	/// @return True if selection was changed.
-	bool UpdateSelection(bool selecting);
+	/// @param[in] selecting True if the new position of the cursor should expand / contract the selection area, false if it should only set the anchor for future selections.
+	void UpdateSelection(bool selecting);
 	/// Removes the selection of text.
-	/// @return True if selection was changed.
-	bool ClearSelection();
+	void ClearSelection();
 	/// Deletes all selected text and removes the selection.
 	void DeleteSelection();
 	/// Copies the selection (if any) to the clipboard.
@@ -200,19 +172,21 @@ private:
 	/// Split one line of text into three parts, based on the current selection.
 	/// @param[out] pre_selection The section of unselected text before any selected text on the line.
 	/// @param[out] selection The section of selected text on the line.
-	/// @param[out] post_selection The section of unselected text after any selected text on the line. If there is no selection on the line, then this
-	/// will be empty.
+	/// @param[out] post_selection The section of unselected text after any selected text on the line. If there is no selection on the line, then this will be empty.
 	/// @param[in] line The text making up the line.
 	/// @param[in] line_begin The absolute index at the beginning of the line.
-	void GetLineSelection(String& pre_selection, String& selection, String& post_selection, const String& line, int line_begin) const;
+	void GetLineSelection(String& pre_selection, String& selection, String& post_selection, const String& line, int line_begin);
 
-	struct Line {
-		// Offset into the text field's value.
-		int value_offset;
-		// The size of the contents of the line (including the trailing endline, if that terminated the line).
-		int size;
+	struct Line
+	{
+		// The contents of the line (including the trailing endline, if that terminated the line).
+		String content;
 		// The length of the editable characters on the line (excluding any trailing endline).
-		int editable_length;
+		int content_length;
+
+		// The number of extra characters at the end of the content that are not present in the actual value; in the
+		// case of a soft return, this may be negative.
+		int extra_characters;
 	};
 
 	ElementFormControl* parent;
@@ -222,23 +196,21 @@ private:
 	Vector2f internal_dimensions;
 	Vector2f scroll_offset;
 
-	using LineList = Vector<Line>;
+	typedef Vector< Line > LineList;
 	LineList lines;
 
 	// Length in number of characters.
 	int max_length;
 
-	// -- All indices are in bytes: Should always be moved along UTF-8 start bytes. --
-
-	// Absolute cursor index. Byte index into the text field's value.
+	// Indices in bytes: Should always be moved along UTF-8 start bytes.
+	int edit_index;
+	
 	int absolute_cursor_index;
-	// When the cursor is located at the very end of a word-wrapped line there are two valid positions for the same absolute index: at the end of the
-	// line and at the beginning of the next line. This state determines which of these lines the cursor is placed on visually.
-	bool cursor_wrap_down;
+	int cursor_line_index;
+	int cursor_character_index;
 
-	bool ideal_cursor_position_to_the_right_of_cursor;
+	bool cursor_on_right_side_of_character;
 	bool cancel_next_drag;
-	bool force_formatting_on_next_layout;
 
 	// Selection. The start and end indices of the selection are in absolute coordinates.
 	Element* selection_element;

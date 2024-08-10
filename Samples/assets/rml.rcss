@@ -27,7 +27,12 @@ strong
 	font-weight: bold;
 }
 
-select
+datagrid
+{
+	display: block;
+}
+
+select, dataselect, datacombo
 {
 	text-align: left;
 }

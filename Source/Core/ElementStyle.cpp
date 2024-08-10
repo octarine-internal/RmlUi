@@ -4,7 +4,7 @@
  * For the latest information, see http://github.com/mikke89/RmlUi
  *
  * Copyright (c) 2008-2010 CodePoint Ltd, Shift Technology Ltd
- * Copyright (c) 2019-2023 The RmlUi Team, and contributors
+ * Copyright (c) 2019 The RmlUi Team, and contributors
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -15,7 +15,7 @@
  *
  * The above copyright notice and this permission notice shall be included in
  * all copies or substantial portions of the Software.
- *
+ * 
  * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
  * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
  * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -35,22 +35,24 @@
 #include "../../Include/RmlUi/Core/FontEngineInterface.h"
 #include "../../Include/RmlUi/Core/Log.h"
 #include "../../Include/RmlUi/Core/Math.h"
-#include "../../Include/RmlUi/Core/Profiling.h"
 #include "../../Include/RmlUi/Core/Property.h"
 #include "../../Include/RmlUi/Core/PropertyDefinition.h"
 #include "../../Include/RmlUi/Core/PropertyDictionary.h"
 #include "../../Include/RmlUi/Core/PropertyIdSet.h"
+#include "../../Include/RmlUi/Core/Profiling.h"
 #include "../../Include/RmlUi/Core/StyleSheet.h"
 #include "../../Include/RmlUi/Core/StyleSheetSpecification.h"
 #include "../../Include/RmlUi/Core/TransformPrimitive.h"
-#include "ComputeProperty.h"
 #include "ElementDecoration.h"
 #include "ElementDefinition.h"
+#include "ComputeProperty.h"
 #include "PropertiesIterator.h"
 #include <algorithm>
 
+
 namespace Rml {
 
+// Bitwise operations on the PseudoClassState.
 inline PseudoClassState operator|(PseudoClassState lhs, PseudoClassState rhs)
 {
 	return PseudoClassState(int(lhs) | int(rhs));
@@ -63,8 +65,10 @@ inline PseudoClassState operator&(PseudoClassState lhs, PseudoClassState rhs)
 ElementStyle::ElementStyle(Element* _element)
 {
 	element = _element;
+	definition_dirty = true;
 }
 
+// Returns one of this element's properties.
 const Property* ElementStyle::GetLocalProperty(PropertyId id, const PropertyDictionary& inline_properties, const ElementDefinition* definition)
 {
 	// Check for overriding local properties.
@@ -79,8 +83,8 @@ const Property* ElementStyle::GetLocalProperty(PropertyId id, const PropertyDict
 	return nullptr;
 }
 
-const Property* ElementStyle::GetProperty(PropertyId id, const Element* element, const PropertyDictionary& inline_properties,
-	const ElementDefinition* definition)
+// Returns one of this element's properties.
+const Property* ElementStyle::GetProperty(PropertyId id, const Element* element, const PropertyDictionary& inline_properties, const ElementDefinition* definition)
 {
 	const Property* local_property = GetLocalProperty(id, inline_properties, definition);
 	if (local_property)
@@ -109,18 +113,16 @@ const Property* ElementStyle::GetProperty(PropertyId id, const Element* element,
 	return property->GetDefaultValue();
 }
 
-void ElementStyle::TransitionPropertyChanges(Element* element, PropertyIdSet& properties, const PropertyDictionary& inline_properties,
-	const ElementDefinition* old_definition, const ElementDefinition* new_definition)
+// Apply transition to relevant properties if a transition is defined on element.
+// Properties that are part of a transition are removed from the properties list.
+void ElementStyle::TransitionPropertyChanges(Element* element, PropertyIdSet& properties, const PropertyDictionary& inline_properties, const ElementDefinition* old_definition, const ElementDefinition* new_definition)
 {
-	// Apply transition to relevant properties if a transition is defined on element.
-	// Properties that are part of a transition are removed from the properties list.
-
 	RMLUI_ASSERT(element);
 	if (!old_definition || !new_definition || properties.Empty())
 		return;
 
-	// We get the local property instead of the computed value here, because we want to intercept property changes even before the computed values are
-	// ready. Now that we have the concept of computed values, we may want do this operation directly on them instead.
+	// We get the local property instead of the computed value here, because we want to intercept property changes even before the computed values are ready.
+	// Now that we have the concept of computed values, we may want do this operation directly on them instead.
 	if (const Property* transition_property = GetLocalProperty(PropertyId::Transition, inline_properties, new_definition))
 	{
 		if (transition_property->value.GetType() != Variant::TRANSITIONLIST)
@@ -144,7 +146,7 @@ void ElementStyle::TransitionPropertyChanges(Element* element, PropertyIdSet& pr
 			if (transition_list.all)
 			{
 				Transition transition = transition_list.transitions[0];
-				for (auto it = properties.begin(); it != properties.end();)
+				for (auto it = properties.begin(); it != properties.end(); )
 				{
 					transition.id = *it;
 					if (add_transition(transition))
@@ -167,52 +169,62 @@ void ElementStyle::TransitionPropertyChanges(Element* element, PropertyIdSet& pr
 		}
 	}
 }
-
+	
 void ElementStyle::UpdateDefinition()
 {
-	RMLUI_ZoneScoped;
-
-	SharedPtr<const ElementDefinition> new_definition;
-
-	if (const StyleSheet* style_sheet = element->GetStyleSheet())
+	if (definition_dirty)
 	{
-		new_definition = style_sheet->GetElementDefinition(element);
-	}
+		RMLUI_ZoneScoped;
 
-	// Switch the property definitions if the definition has changed.
-	if (new_definition != definition)
-	{
-		PropertyIdSet changed_properties;
+		definition_dirty = false;
 
-		if (definition)
-			changed_properties = definition->GetPropertyIds();
-
-		if (new_definition)
-			changed_properties |= new_definition->GetPropertyIds();
-
-		if (definition && new_definition)
+		SharedPtr<const ElementDefinition> new_definition;
+		
+		if (const StyleSheet* style_sheet = element->GetStyleSheet())
 		{
-			// Remove properties that compare equal from the changed list.
-			const PropertyIdSet properties_in_both_definitions = (definition->GetPropertyIds() & new_definition->GetPropertyIds());
+			new_definition = style_sheet->GetElementDefinition(element);
+		}
+		
+		// Switch the property definitions if the definition has changed.
+		if (new_definition != definition)
+		{
+			PropertyIdSet changed_properties;
+			
+			if (definition)
+				changed_properties = definition->GetPropertyIds();
 
-			for (PropertyId id : properties_in_both_definitions)
+			if (new_definition)
+				changed_properties |= new_definition->GetPropertyIds();
+
+			if (definition && new_definition)
 			{
-				const Property* p0 = definition->GetProperty(id);
-				const Property* p1 = new_definition->GetProperty(id);
-				if (p0 && p1 && *p0 == *p1)
-					changed_properties.Erase(id);
+				// Remove properties that compare equal from the changed list.
+				const PropertyIdSet properties_in_both_definitions = (definition->GetPropertyIds() & new_definition->GetPropertyIds());
+
+				for (PropertyId id : properties_in_both_definitions)
+				{
+					const Property* p0 = definition->GetProperty(id);
+					const Property* p1 = new_definition->GetProperty(id);
+					if (p0 && p1 && *p0 == *p1)
+						changed_properties.Erase(id);
+				}
+
+				// Transition changed properties if transition property is set
+				TransitionPropertyChanges(element, changed_properties, inline_properties, definition.get(), new_definition.get());
 			}
 
-			// Transition changed properties if transition property is set
-			TransitionPropertyChanges(element, changed_properties, inline_properties, definition.get(), new_definition.get());
+			definition = new_definition;
+			
+			DirtyProperties(changed_properties);
 		}
 
-		definition = new_definition;
-
-		DirtyProperties(changed_properties);
+		// Even if the definition was not changed, the child definitions may have changed as a result of anything that
+		// could change the definition of this element, such as a new pseudo class.
+		DirtyChildDefinitions();
 	}
 }
 
+// Sets or removes a pseudo-class on the element.
 bool ElementStyle::SetPseudoClass(const String& pseudo_class, bool activate, bool override_class)
 {
 	bool changed = false;
@@ -238,9 +250,13 @@ bool ElementStyle::SetPseudoClass(const String& pseudo_class, bool activate, boo
 		}
 	}
 
+	if (changed)
+		DirtyDefinition();
+
 	return changed;
 }
 
+// Checks if a specific pseudo-class has been set on the element.
 bool ElementStyle::IsPseudoClassSet(const String& pseudo_class) const
 {
 	return (pseudo_classes.count(pseudo_class) == 1);
@@ -251,17 +267,17 @@ const PseudoClassMap& ElementStyle::GetActivePseudoClasses() const
 	return pseudo_classes;
 }
 
-bool ElementStyle::SetClass(const String& class_name, bool activate)
+// Sets or removes a class on the element.
+void ElementStyle::SetClass(const String& class_name, bool activate)
 {
-	const auto class_location = std::find(classes.begin(), classes.end(), class_name);
+	StringList::iterator class_location = std::find(classes.begin(), classes.end(), class_name);
 
-	bool changed = false;
 	if (activate)
 	{
 		if (class_location == classes.end())
 		{
 			classes.push_back(class_name);
-			changed = true;
+			DirtyDefinition();
 		}
 	}
 	else
@@ -269,24 +285,26 @@ bool ElementStyle::SetClass(const String& class_name, bool activate)
 		if (class_location != classes.end())
 		{
 			classes.erase(class_location);
-			changed = true;
+			DirtyDefinition();
 		}
 	}
-
-	return changed;
 }
 
+// Checks if a class is set on the element.
 bool ElementStyle::IsClassSet(const String& class_name) const
 {
 	return std::find(classes.begin(), classes.end(), class_name) != classes.end();
 }
 
+// Specifies the entire list of classes for this element. This will replace any others specified.
 void ElementStyle::SetClassNames(const String& class_names)
 {
 	classes.clear();
 	StringUtilities::ExpandString(classes, class_names, ' ');
+	DirtyDefinition();
 }
 
+// Returns the list of classes specified for this element.
 String ElementStyle::GetClassNames() const
 {
 	String class_names;
@@ -307,6 +325,7 @@ const StringList& ElementStyle::GetClassNameList() const
 	return classes;
 }
 
+// Sets a local property override on the element to a pre-parsed value.
 bool ElementStyle::SetProperty(PropertyId id, const Property& property)
 {
 	Property new_property = property;
@@ -321,20 +340,25 @@ bool ElementStyle::SetProperty(PropertyId id, const Property& property)
 	return true;
 }
 
+// Removes a local property override on the element.
 void ElementStyle::RemoveProperty(PropertyId id)
 {
 	int size_before = inline_properties.GetNumProperties();
 	inline_properties.RemoveProperty(id);
 
-	if (inline_properties.GetNumProperties() != size_before)
+	if(inline_properties.GetNumProperties() != size_before)
 		DirtyProperty(id);
 }
 
+
+
+// Returns one of this element's properties.
 const Property* ElementStyle::GetProperty(PropertyId id) const
 {
 	return GetProperty(id, element, inline_properties, definition.get());
 }
 
+// Returns one of this element's properties.
 const Property* ElementStyle::GetLocalProperty(PropertyId id) const
 {
 	return GetLocalProperty(id, inline_properties, definition.get());
@@ -352,27 +376,28 @@ static float ComputeLength(NumericValue value, Element* element)
 	float dp_ratio = 1.0f;
 	Vector2f vp_dimensions(1.0f);
 
-	if (Any(value.unit & Unit::DP_SCALABLE_LENGTH))
-	{
-		if (Context* context = element->GetContext())
-			dp_ratio = context->GetDensityIndependentPixelRatio();
-	}
-
 	switch (value.unit)
 	{
-	case Unit::EM: font_size = element->GetComputedValues().font_size(); break;
+	case Unit::EM:
+		font_size = element->GetComputedValues().font_size();
+		break;
 	case Unit::REM:
 		if (ElementDocument* document = element->GetOwnerDocument())
 			doc_font_size = document->GetComputedValues().font_size();
 		else
 			doc_font_size = DefaultComputedValues.font_size();
 		break;
+	case Unit::DP:
+		if (Context* context = element->GetContext())
+			dp_ratio = context->GetDensityIndependentPixelRatio();
+		break;
 	case Unit::VW:
 	case Unit::VH:
 		if (Context* context = element->GetContext())
 			vp_dimensions = Vector2f(context->GetDimensions());
 		break;
-	default: break;
+	default:
+		break;
 	}
 
 	const float result = ComputeLength(value, font_size, doc_font_size, dp_ratio, vp_dimensions);
@@ -381,26 +406,31 @@ static float ComputeLength(NumericValue value, Element* element)
 
 float ElementStyle::ResolveNumericValue(NumericValue value, float base_value) const
 {
-	if (value.unit == Unit::PX)
-		return value.number;
+	if (Any(value.unit & Unit::ABSOLUTE_LENGTH))
+		return ComputeAbsoluteLength(value);
 	else if (Any(value.unit & Unit::LENGTH))
 		return ComputeLength(value, element);
 
 	switch (value.unit)
 	{
-	case Unit::NUMBER: return value.number * base_value;
-	case Unit::PERCENT: return value.number * base_value * 0.01f;
-	case Unit::X: return value.number;
+	case Unit::NUMBER:
+		return value.number * base_value;
+	case Unit::PERCENT:
+		return value.number * base_value * 0.01f;
+	case Unit::X:
+		return value.number;
 	case Unit::DEG:
-	case Unit::RAD: return ComputeAngle(value);
-	default: break;
+	case Unit::RAD:
+		return ComputeAngle(value);
+	default:
+		break;
 	}
 
 	RMLUI_ERROR;
 	return 0.f;
 }
 
-float ElementStyle::ResolveRelativeLength(NumericValue value, RelativeTarget relative_target) const
+float ElementStyle::ResolveLength(NumericValue value, RelativeTarget relative_target) const
 {
 	// There is an exception on font-size properties, as 'em' units here refer to parent font size instead
 	if (Any(value.unit & Unit::LENGTH) && !(value.unit == Unit::EM && relative_target == RelativeTarget::ParentFontSize))
@@ -413,17 +443,29 @@ float ElementStyle::ResolveRelativeLength(NumericValue value, RelativeTarget rel
 
 	switch (relative_target)
 	{
-	case RelativeTarget::None: base_value = 1.0f; break;
-	case RelativeTarget::ContainingBlockWidth: base_value = element->GetContainingBlock().x; break;
-	case RelativeTarget::ContainingBlockHeight: base_value = element->GetContainingBlock().y; break;
-	case RelativeTarget::FontSize: base_value = element->GetComputedValues().font_size(); break;
+	case RelativeTarget::None:
+		base_value = 1.0f;
+		break;
+	case RelativeTarget::ContainingBlockWidth:
+		base_value = element->GetContainingBlock().x;
+		break;
+	case RelativeTarget::ContainingBlockHeight:
+		base_value = element->GetContainingBlock().y;
+		break;
+	case RelativeTarget::FontSize:
+		base_value = element->GetComputedValues().font_size();
+		break;
 	case RelativeTarget::ParentFontSize:
 	{
 		auto p = element->GetParentNode();
 		base_value = (p ? p->GetComputedValues().font_size() : DefaultComputedValues.font_size());
 	}
-	break;
-	case RelativeTarget::LineHeight: base_value = element->GetLineHeight(); break;
+		break;
+	case RelativeTarget::LineHeight:
+		base_value = element->GetLineHeight();
+		break;
+	default:
+		break;
 	}
 
 	float scale_value = 0.0f;
@@ -431,17 +473,33 @@ float ElementStyle::ResolveRelativeLength(NumericValue value, RelativeTarget rel
 	switch (value.unit)
 	{
 	case Unit::EM:
-	case Unit::NUMBER: scale_value = value.number; break;
-	case Unit::PERCENT: scale_value = value.number * 0.01f; break;
-	default: break;
+	case Unit::NUMBER:
+		scale_value = value.number;
+		break;
+	case Unit::PERCENT:
+		scale_value = value.number * 0.01f;
+		break;
+	default:
+		break;
 	}
 
 	return base_value * scale_value;
 }
 
+void ElementStyle::DirtyDefinition()
+{
+	definition_dirty = true;
+}
+
 void ElementStyle::DirtyInheritedProperties()
 {
 	dirty_properties |= StyleSheetSpecification::GetRegisteredInheritedProperties();
+}
+
+void ElementStyle::DirtyChildDefinitions()
+{
+	for (int i = 0; i < element->GetNumChildren(true); i++)
+		element->GetChild(i)->GetStyle()->DirtyDefinition();
 }
 
 void ElementStyle::DirtyPropertiesWithUnits(Units units)
@@ -467,15 +525,13 @@ void ElementStyle::DirtyPropertiesWithUnitsRecursive(Units units)
 		element->GetChild(i)->GetStyle()->DirtyPropertiesWithUnitsRecursive(units);
 }
 
-bool ElementStyle::AnyPropertiesDirty() const
+bool ElementStyle::AnyPropertiesDirty() const 
 {
-	return !dirty_properties.Empty();
+	return !dirty_properties.Empty(); 
 }
 
-PropertiesIterator ElementStyle::Iterate() const
-{
-	// Note: Value initialized iterators are only guaranteed to compare equal in C++14, and only for iterators
-	// satisfying the ForwardIterator requirements.
+PropertiesIterator ElementStyle::Iterate() const {
+	// Note: Value initialized iterators are only guaranteed to compare equal in C++14, and only for iterators satisfying the ForwardIterator requirements.
 #ifdef _MSC_VER
 	// Null forward iterator supported since VS 2015
 	static_assert(_MSC_VER >= 1900, "Visual Studio 2015 or higher required, see comment.");
@@ -497,18 +553,19 @@ PropertiesIterator ElementStyle::Iterate() const
 	return PropertiesIterator(it_style_begin, it_style_end, it_definition, it_definition_end);
 }
 
+// Sets a single property as dirty.
 void ElementStyle::DirtyProperty(PropertyId id)
 {
 	dirty_properties.Insert(id);
 }
 
+// Sets a list of properties as dirty.
 void ElementStyle::DirtyProperties(const PropertyIdSet& properties)
 {
 	dirty_properties |= properties;
 }
 
-PropertyIdSet ElementStyle::ComputeValues(Style::ComputedValues& values, const Style::ComputedValues* parent_values,
-	const Style::ComputedValues* document_values, bool values_are_default_initialized, float dp_ratio, Vector2f vp_dimensions)
+PropertyIdSet ElementStyle::ComputeValues(Style::ComputedValues& values, const Style::ComputedValues* parent_values, const Style::ComputedValues* document_values, bool values_are_default_initialized, float dp_ratio, Vector2f vp_dimensions)
 {
 	if (dirty_properties.Empty())
 		return PropertyIdSet();
@@ -542,13 +599,13 @@ PropertyIdSet ElementStyle::ComputeValues(Style::ComputedValues& values, const S
 	bool dirty_em_properties = false;
 
 	// Always do font-size first if dirty, because of em-relative values
-	if (dirty_properties.Contains(PropertyId::FontSize))
+	if(dirty_properties.Contains(PropertyId::FontSize))
 	{
 		if (auto p = GetLocalProperty(PropertyId::FontSize))
 			values.font_size(ComputeFontsize(p->GetNumericValue(), values, parent_values, document_values, dp_ratio, vp_dimensions));
 		else if (parent_values)
 			values.font_size(parent_values->font_size());
-
+		
 		if (font_size_before != values.font_size())
 		{
 			dirty_em_properties = true;
@@ -589,7 +646,7 @@ PropertyIdSet ElementStyle::ComputeValues(Style::ComputedValues& values, const S
 		values.line_height(line_height_before);
 	}
 
-	bool dirty_font_face_handle = false;
+	bool dirty_font_face_handle = !values.initialized_font_face_handle();
 
 	for (auto it = Iterate(); !it.AtEnd(); ++it)
 	{
@@ -602,7 +659,6 @@ PropertyIdSet ElementStyle::ComputeValues(Style::ComputedValues& values, const S
 
 		using namespace Style;
 
-		// clang-format off
 		switch (id)
 		{
 		case PropertyId::MarginTop:
@@ -713,7 +769,7 @@ PropertyIdSet ElementStyle::ComputeValues(Style::ComputedValues& values, const S
 			values.min_width(ComputeLengthPercentage(p, font_size, document_font_size, dp_ratio, vp_dimensions));
 			break;
 		case PropertyId::MaxWidth:
-			values.max_width(ComputeMaxSize(p, font_size, document_font_size, dp_ratio, vp_dimensions));
+			values.max_width(ComputeLengthPercentage(p, font_size, document_font_size, dp_ratio, vp_dimensions));
 			break;
 
 		case PropertyId::Height:
@@ -723,7 +779,7 @@ PropertyIdSet ElementStyle::ComputeValues(Style::ComputedValues& values, const S
 			values.min_height(ComputeLengthPercentage(p, font_size, document_font_size, dp_ratio, vp_dimensions));
 			break;
 		case PropertyId::MaxHeight:
-			values.max_height(ComputeMaxSize(p, font_size, document_font_size, dp_ratio, vp_dimensions));
+			values.max_height(ComputeLengthPercentage(p, font_size, document_font_size, dp_ratio, vp_dimensions));
 			break;
 
 		case PropertyId::LineHeight:
@@ -775,10 +831,6 @@ PropertyIdSet ElementStyle::ComputeValues(Style::ComputedValues& values, const S
 			// (font-size computed above)
 			dirty_font_face_handle = true;
 			break;
-		case PropertyId::LetterSpacing:
-			values.has_letter_spacing(p->unit != Unit::KEYWORD);
-			dirty_font_face_handle = true;
-			break;
 
 		case PropertyId::TextAlign:
 			values.text_align((TextAlign)p->Get<int>());
@@ -815,16 +867,13 @@ PropertyIdSet ElementStyle::ComputeValues(Style::ComputedValues& values, const S
 		case PropertyId::ScrollbarMargin:
 			values.scrollbar_margin(ComputeLength(p->GetNumericValue(), font_size, document_font_size, dp_ratio, vp_dimensions));
 			break;
-		case PropertyId::OverscrollBehavior:
-			values.overscroll_behavior((OverscrollBehavior)p->Get<int>());
-			break;
 		case PropertyId::PointerEvents:
 			values.pointer_events((PointerEvents)p->Get<int>());
 			break;
 
 		case PropertyId::Perspective:
-			values.perspective(p->unit == Unit::KEYWORD ? 0.f : ComputeLength(p->GetNumericValue(), font_size, document_font_size, dp_ratio, vp_dimensions));
-			values.has_local_perspective(values.perspective() > 0.f);
+			values.perspective(
+				p->unit == Unit::KEYWORD ? 0.f : ComputeLength(p->GetNumericValue(), font_size, document_font_size, dp_ratio, vp_dimensions));
 			break;
 		case PropertyId::PerspectiveOriginX:
 			values.perspective_origin_x(ComputeOrigin(p, font_size, document_font_size, dp_ratio, vp_dimensions));
@@ -833,9 +882,6 @@ PropertyIdSet ElementStyle::ComputeValues(Style::ComputedValues& values, const S
 			values.perspective_origin_y(ComputeOrigin(p, font_size, document_font_size, dp_ratio, vp_dimensions));
 			break;
 
-		case PropertyId::Transform:
-			values.has_local_transform(p->Get<TransformPtr>() != nullptr);
-			break;
 		case PropertyId::TransformOriginX:
 			values.transform_origin_x(ComputeOrigin(p, font_size, document_font_size, dp_ratio, vp_dimensions));
 			break;
@@ -846,25 +892,32 @@ PropertyIdSet ElementStyle::ComputeValues(Style::ComputedValues& values, const S
 			values.transform_origin_z(ComputeLength(p->GetNumericValue(), font_size, document_font_size, dp_ratio, vp_dimensions));
 			break;
 
+		case PropertyId::FlexBasis:
+			values.flex_basis(ComputeLengthPercentageAuto(p, font_size, document_font_size, dp_ratio, vp_dimensions));
+			break;
+
 		case PropertyId::Decorator:
 			values.has_decorator(p->unit == Unit::DECORATOR);
 			break;
 		case PropertyId::FontEffect:
 			values.has_font_effect((p->unit == Unit::FONTEFFECT));
 			break;
-		case PropertyId::FlexBasis:
-			values.flex_basis(ComputeLengthPercentageAuto(p, font_size, document_font_size, dp_ratio, vp_dimensions));
+		case PropertyId::Filter:
+			values.has_filter(p->unit == Unit::DECORATOR);
 			break;
-
-		case PropertyId::RmlUi_Language:
-			values.language(p->Get<String>());
+		case PropertyId::BackdropFilter:
+			values.has_backdrop_filter(p->unit == Unit::DECORATOR);
 			break;
-		case PropertyId::RmlUi_Direction:
-			values.direction(p->Get<Direction>());
+		case PropertyId::MaskImage:
+			values.has_mask_image(p->unit == Unit::DECORATOR);
+			break;
+		case PropertyId::BoxShadow:
+			values.has_box_shadow(p->unit == Unit::SHADOWLIST);
 			break;
 
 		// Fetched from element's properties.
 		case PropertyId::Cursor:
+		case PropertyId::Transform:
 		case PropertyId::Transition:
 		case PropertyId::Animation:
 		case PropertyId::AlignContent:
@@ -876,12 +929,7 @@ PropertyIdSet ElementStyle::ComputeValues(Style::ComputedValues& values, const S
 		case PropertyId::FlexWrap:
 		case PropertyId::JustifyContent:
 			break;
-		// Navigation properties. Must be manually retrieved with 'GetProperty()'.
-		case PropertyId::NavUp:
-		case PropertyId::NavDown:
-		case PropertyId::NavLeft:
-		case PropertyId::NavRight:
-			break;
+
 		// Unhandled properties. Must be manually retrieved with 'GetProperty()'.
 		case PropertyId::FillImage:
 		case PropertyId::CaretColor:
@@ -892,13 +940,13 @@ PropertyIdSet ElementStyle::ComputeValues(Style::ComputedValues& values, const S
 		case PropertyId::MaxNumIds:
 			break;
 		}
-		// clang-format on
 	}
 
 	// The font-face handle is nulled when local font properties are set. In that case we need to retrieve a new handle.
 	if (dirty_font_face_handle)
 	{
 		RMLUI_ZoneScopedN("FontFaceHandle");
+		values.initialized_font_face_handle(true);
 		values.font_face_handle(
 			GetFontEngineInterface()->GetFontFaceHandle(values.font_family(), values.font_style(), values.font_weight(), (int)values.font_size()));
 	}
@@ -914,7 +962,7 @@ PropertyIdSet ElementStyle::ComputeValues(Style::ComputedValues& values, const S
 			child->GetStyle()->dirty_properties |= dirty_inherited_properties;
 		}
 	}
-
+	
 	PropertyIdSet result(std::move(dirty_properties));
 	dirty_properties.Clear();
 	return result;

@@ -4,7 +4,7 @@
  * For the latest information, see http://github.com/mikke89/RmlUi
  *
  * Copyright (c) 2008-2010 CodePoint Ltd, Shift Technology Ltd
- * Copyright (c) 2019-2023 The RmlUi Team, and contributors
+ * Copyright (c) 2019 The RmlUi Team, and contributors
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -15,7 +15,7 @@
  *
  * The above copyright notice and this permission notice shall be included in
  * all copies or substantial portions of the Software.
- *
+ * 
  * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
  * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
  * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -27,13 +27,13 @@
  */
 
 #include "Defender.h"
+#include <Shell.h>
 #include "Game.h"
 #include "GameDetails.h"
 #include "Invader.h"
 #include "Mothership.h"
 #include "Shield.h"
 #include "Sprite.h"
-#include <Shell.h>
 
 const float UPDATE_FREQ = 0.01f;
 const float MOVEMENT_SPEED = 300;
@@ -57,18 +57,20 @@ Defender::Defender(Game* _game)
 	state = ALIVE;
 	render = true;
 }
-
-Defender::~Defender() {}
+	
+Defender::~Defender()
+{
+}
 
 void Defender::Update(double t)
 {
 	float dt = float(t - defender_frame_start);
 	if (dt < UPDATE_FREQ)
 		return;
-
+	
 	dt = Rml::Math::Min(dt, 0.1f);
 
-	defender_frame_start = t;
+	defender_frame_start = t;	
 
 	position.x += (move_direction * dt * MOVEMENT_SPEED);
 
@@ -77,10 +79,17 @@ void Defender::Update(double t)
 	else if (position.x > (game->GetWindowDimensions().x - SPRITE_WIDTH - 5))
 		position.x = game->GetWindowDimensions().x - SPRITE_WIDTH - 5;
 
-	UpdateBullet(t);
+	// Update the bullet
+	if (bullet_in_flight)
+	{
+		// Move it up and mark it dead if it flies off the top of the screen
+		bullet_position.y -= BULLET_SPEED;
+		if (bullet_position.y < 0)
+			bullet_in_flight = false;
+	}
 
 	if (state == RESPAWN)
-	{
+	{	
 		// Switch the render flag so the defender "flickers"
 		render = !render;
 
@@ -89,11 +98,11 @@ void Defender::Update(double t)
 		{
 			state = ALIVE;
 			render = true;
-		}
+		}		
 	}
 }
 
-void Defender::Render(float dp_ratio, Rml::TextureHandle texture)
+void Defender::Render(double t, float dp_ratio, Rml::TextureHandle texture)
 {
 	Rml::Colourb color = GameDetails::GetDefenderColour();
 
@@ -101,9 +110,33 @@ void Defender::Render(float dp_ratio, Rml::TextureHandle texture)
 	if (render)
 		defender_sprite.Render(position, dp_ratio, color, texture);
 
-	// Render the bullet
+	// Update the bullet, doing collision detection
 	if (bullet_in_flight)
+	{
 		bullet_sprite.Render(bullet_position, dp_ratio, color, texture);
+
+		// Check if we hit the shields
+		for (int i = 0; i < game->GetNumShields(); i++)
+		{
+			if (game->GetShield(i)->CheckHit(bullet_position))
+			{
+				bullet_in_flight = false;
+				break;
+			}
+		}
+
+		if (bullet_in_flight)
+		{
+			for (int i = 0; i < game->GetNumInvaders(); i++)
+			{
+				if (game->GetInvader(i)->CheckHit(t, bullet_position))
+				{
+					bullet_in_flight = false;
+					break;
+				}
+			}
+		}
+	}
 }
 
 void Defender::StartMove(float direction)
@@ -122,61 +155,30 @@ void Defender::Fire()
 {
 	if (!bullet_in_flight)
 	{
-		bullet_position = position + Rml::Vector2f((SPRITE_WIDTH / 2) - 4, 0);
+		bullet_position = position + Rml::Vector2f((SPRITE_WIDTH/2) - 4, 0);
 		bullet_in_flight = true;
 	}
 }
 
 bool Defender::CheckHit(double t, const Rml::Vector2f& check_position)
-{
+{	
 	float sprite_width = defender_sprite.dimensions.x;
 	float sprite_height = defender_sprite.dimensions.y;
 
 	// If the position is within our bounds, set ourselves
 	// as exploding and return a valid hit.
-	if (state == ALIVE && check_position.x >= position.x && check_position.x <= position.x + sprite_width && check_position.y >= position.y &&
-		check_position.y <= position.y + sprite_height)
+	if (state == ALIVE
+		&& check_position.x >= position.x
+		&& check_position.x <= position.x + sprite_width
+		&& check_position.y >= position.y
+		&& check_position.y <= position.y + sprite_height)
 	{
 		game->RemoveLife();
 		state = RESPAWN;
 		respawn_start = t;
 
 		return true;
-	}
+	}	
 
 	return false;
-}
-
-void Defender::UpdateBullet(double t)
-{
-	if (bullet_in_flight)
-	{
-		// Move the bullet up and mark it dead if it flies off the top of the screen
-		bullet_position.y -= BULLET_SPEED;
-		if (bullet_position.y < 0)
-		{
-			bullet_in_flight = false;
-			return;
-		}
-
-		// Check if we hit the shields
-		for (int i = 0; i < game->GetNumShields(); i++)
-		{
-			if (game->GetShield(i)->CheckHit(bullet_position))
-			{
-				bullet_in_flight = false;
-				return;
-			}
-		}
-
-		// Check if we hit any invaders
-		for (int i = 0; i < game->GetNumInvaders(); i++)
-		{
-			if (game->GetInvader(i)->CheckHit(t, bullet_position))
-			{
-				bullet_in_flight = false;
-				return;
-			}
-		}
-	}
 }

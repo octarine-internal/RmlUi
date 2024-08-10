@@ -4,7 +4,7 @@
  * For the latest information, see http://github.com/mikke89/RmlUi
  *
  * Copyright (c) 2008-2010 CodePoint Ltd, Shift Technology Ltd
- * Copyright (c) 2019-2023 The RmlUi Team, and contributors
+ * Copyright (c) 2019 The RmlUi Team, and contributors
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -29,26 +29,26 @@
 #ifndef RMLUI_SHELL_SHELL_H
 #define RMLUI_SHELL_SHELL_H
 
-#include <RmlUi/Core/Context.h>
-#include <RmlUi/Core/Input.h>
 #include <RmlUi/Core/Types.h>
 
-/**
-    Provides common functionality required for the built-in RmlUi samples.
- */
+using ShellIdleFunction = void (*)();
+
 namespace Shell {
 
-// Initializes and sets a custom file interface used for locating the included RmlUi asset files.
 bool Initialize();
-// Destroys all resources constructed by the shell.
 void Shutdown();
 
-// Loads the fonts included with the RmlUi samples.
-void LoadFonts();
+bool OpenWindow(const char* name, int width, int height, bool allow_resize);
+void CloseWindow();
 
-// Process key down events to handle shortcuts common to all samples.
-// @return True if the event is still propagating, false if it was handled here.
-bool ProcessKeyDownShortcuts(Rml::Context* context, Rml::Input::KeyIdentifier key, int key_modifier, float native_dp_ratio, bool priority);
+void LoadFonts();
+void SetContext(Rml::Context* new_context);
+
+void EventLoop(ShellIdleFunction idle_function);
+void RequestExit();
+
+void BeginFrame();
+void PresentFrame();
 
 } // namespace Shell
 

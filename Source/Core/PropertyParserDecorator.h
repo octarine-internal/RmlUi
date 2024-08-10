@@ -4,7 +4,7 @@
  * For the latest information, see http://github.com/mikke89/RmlUi
  *
  * Copyright (c) 2008-2010 CodePoint Ltd, Shift Technology Ltd
- * Copyright (c) 2019-2023 The RmlUi Team, and contributors
+ * Copyright (c) 2019 The RmlUi Team, and contributors
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -29,6 +29,7 @@
 #ifndef RMLUI_CORE_PROPERTYPARSERDECORATOR_H
 #define RMLUI_CORE_PROPERTYPARSERDECORATOR_H
 
+#include "../../Include/RmlUi/Core/Box.h"
 #include "../../Include/RmlUi/Core/PropertyParser.h"
 
 namespace Rml {
@@ -44,6 +45,9 @@ public:
 
 	/// Called to parse a decorator declaration.
 	bool ParseValue(Property& property, const String& value, const ParameterMap& parameters) const override;
+
+private:
+	const SmallUnorderedMap<String, BoxArea> area_keywords;
 };
 
 } // namespace Rml

@@ -4,7 +4,7 @@
  * For the latest information, see http://github.com/mikke89/RmlUi
  *
  * Copyright (c) 2008-2010 CodePoint Ltd, Shift Technology Ltd
- * Copyright (c) 2019-2023 The RmlUi Team, and contributors
+ * Copyright (c) 2019 The RmlUi Team, and contributors
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -35,7 +35,7 @@
 
 using namespace Rml;
 
-static const String document_decorator_rml = R"(
+static const String document_filter_rml = R"(
 <rml>
 <head>
 	<title>Test</title>
@@ -47,18 +47,15 @@ static const String document_decorator_rml = R"(
 			right: 0;
 			bottom: 0;
 		}
-		
-		@decorator from_rule : gradient { %s }
-		@decorator to_rule: gradient{ %s }		
-
 		@keyframes mix {
-			from { decorator: %s; }
-			to   { decorator: %s; }
+			from { filter: %s; }
+			to   { filter: %s; }
 		}
 		div {
 			background: #333;
 			height: 64px;
 			width: 64px;
+			decorator: image(high_scores_alien_1.tga);
 			animation: mix 0.1s;
 		}
 	</style>
@@ -70,129 +67,64 @@ static const String document_decorator_rml = R"(
 </rml>
 )";
 
-TEST_CASE("animation.decorator")
+TEST_CASE("animation.filter")
 {
 	struct Test {
-		String from_rule;
-		String to_rule;
 		String from;
 		String to;
 		String expected_25p; // expected interpolated value at 25% progression
 	};
 
 	Vector<Test> tests{
-		// Only standard declaration
 		{
-			"",
-			"",
-
-			"gradient(horizontal transparent transparent)",
-			"gradient(horizontal white white)",
-
-			"gradient(horizontal rgba(127,127,127,63) rgba(127,127,127,63))",
+			"blur( 0px)",
+			"blur(40px)",
+			"blur(10px)",
 		},
 		{
-			"",
-			"",
-
+			"blur(10px)",
+			"blur(25dp)", // assumes dp-ratio == 2
+			"blur(20px)",
+		},
+		{
+			"blur(40px)",
 			"none",
-			"gradient(horizontal transparent transparent)",
-
-			"gradient(horizontal rgba(220,220,220,191) rgba(220,220,220,191))",
+			"blur(30px)",
 		},
 		{
-			"",
-			"",
-
 			"none",
-			"gradient(horizontal transparent transparent), gradient(vertical transparent transparent)",
-
-			"gradient(horizontal rgba(220,220,220,191) rgba(220,220,220,191)), gradient(horizontal rgba(220,220,220,191) rgba(220,220,220,191))",
+			"blur(40px)",
+			"blur(10px)",
 		},
 		{
-			"",
-			"",
-
-			"gradient(horizontal transparent transparent), gradient(vertical transparent transparent)",
+			"drop-shadow(#000 30px 20px 0px)",
+			"drop-shadow(#f00 30px 20px 4px)", // colors interpolated in linear space
+			"drop-shadow(rgba(127,0,0,255) 30px 20px 1px)",
+		},
+		{
+			"opacity(0) brightness(2)",
 			"none",
-
-			"gradient(horizontal rgba(127,127,127,63) rgba(127,127,127,63)), gradient(vertical rgba(127,127,127,63) rgba(127,127,127,63))",
-		},
-
-		/// Only rule declaration
-		{
-			"direction: horizontal; start-color: transparent; stop-color: transparent;",
-			"direction: horizontal; start-color: white; stop-color: white;",
-
-			"from_rule",
-			"to_rule",
-
-			"gradient(horizontal rgba(127,127,127,63) rgba(127,127,127,63))",
+			"opacity(0.25) brightness(1.75)",
 		},
 		{
-			"",
-			"direction: horizontal; start-color: transparent; stop-color: transparent;",
-
-			"from_rule",
-			"to_rule",
-
-			"gradient(horizontal rgba(220,220,220,191) rgba(220,220,220,191))",
+			"opacity(0) brightness(0)",
+			"opacity(0.5)",
+			"opacity(0.125) brightness(0.25)",
 		},
 		{
-			"direction: vertical; start-color: transparent; stop-color: transparent;",
-			"",
-
-			"from_rule",
-			"to_rule",
-
-			"gradient(vertical rgba(127,127,127,63) rgba(127,127,127,63))",
-		},
-
-		/// Mix rule and standard declaration
-		{
-			"direction: horizontal; start-color: transparent; stop-color: transparent;",
-			"",
-
-			"from_rule",
-			"gradient(horizontal white white)",
-
-			"gradient(horizontal rgba(127,127,127,63) rgba(127,127,127,63))",
+			"opacity(0.5)",
+			"opacity(0) brightness(0)",
+			"opacity(0.375) brightness(0.75)",
 		},
 		{
-			"",
-			"direction: horizontal; start-color: transparent; stop-color: transparent;",
-
-			"none",
-			"to_rule",
-
-			"gradient(horizontal rgba(220,220,220,191) rgba(220,220,220,191))",
+			"opacity(0) brightness(0)",
+			"brightness(1) opacity(0.5)", // discrete interpolation due to non-matching types
+			"opacity(0) brightness(0)",
 		},
 		{
-			"direction: vertical; start-color: transparent; stop-color: transparent;",
-			"",
-
-			"from_rule",
-			"none",
-
-			"gradient(vertical rgba(127,127,127,63) rgba(127,127,127,63))",
-		},
-		{
-			"",
-			"",
-
-			"from_rule, to_rule",
-			"gradient(horizontal transparent transparent), gradient(vertical transparent transparent)",
-
-			"gradient(horizontal rgba(220,220,220,191) rgba(220,220,220,191)), gradient(horizontal rgba(220,220,220,191) rgba(220,220,220,191))",
-		},
-		{
-			"",
-			"",
-
-			"gradient(horizontal transparent transparent), gradient(vertical transparent transparent)",
-			"from_rule, to_rule",
-
-			"gradient(horizontal rgba(127,127,127,63) rgba(127,127,127,63)), gradient(vertical rgba(127,127,127,63) rgba(127,127,127,63))",
+			"none", // Test initial values of various filters.
+			"brightness(2.00) contrast(2.00) grayscale(1.00) hue-rotate(4rad) invert(1.00) opacity(0.00) sepia(1.00) saturate(2.00)",
+			"brightness(1.25) contrast(1.25) grayscale(0.25) hue-rotate(1rad) invert(0.25) opacity(0.75) sepia(0.25) saturate(1.25)",
 		},
 	};
 
@@ -205,8 +137,7 @@ TEST_CASE("animation.decorator")
 		const double t_final = 0.1;
 
 		system_interface->SetTime(0.0);
-		String document_rml = Rml::CreateString(document_decorator_rml.size() + 512, document_decorator_rml.c_str(), test.from_rule.c_str(),
-			test.to_rule.c_str(), test.from.c_str(), test.to.c_str());
+		String document_rml = Rml::CreateString(document_filter_rml.size() + 512, document_filter_rml.c_str(), test.from.c_str(), test.to.c_str());
 
 		ElementDocument* document = context->LoadDocumentFromMemory(document_rml, "assets/");
 		Element* element = document->GetChild(0);
@@ -216,7 +147,8 @@ TEST_CASE("animation.decorator")
 
 		system_interface->SetTime(0.25 * t_final);
 		TestsShell::RenderLoop();
-		CHECK_MESSAGE(element->GetProperty<String>("decorator") == test.expected_25p, "from: ", test.from, ", to: ", test.to);
+
+		CHECK_MESSAGE(element->GetProperty<String>("filter") == test.expected_25p, "from: ", test.from, ", to: ", test.to);
 
 		document->Close();
 	}

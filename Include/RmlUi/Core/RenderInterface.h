@@ -4,7 +4,7 @@
  * For the latest information, see http://github.com/mikke89/RmlUi
  *
  * Copyright (c) 2008-2010 CodePoint Ltd, Shift Technology Ltd
- * Copyright (c) 2019-2023 The RmlUi Team, and contributors
+ * Copyright (c) 2019 The RmlUi Team, and contributors
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -15,7 +15,7 @@
  *
  * The above copyright notice and this permission notice shall be included in
  * all copies or substantial portions of the Software.
- *
+ * 
  * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
  * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
  * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -29,22 +29,30 @@
 #ifndef RMLUI_CORE_RENDERINTERFACE_H
 #define RMLUI_CORE_RENDERINTERFACE_H
 
+#include "Traits.h"
 #include "Header.h"
 #include "Texture.h"
-#include "Traits.h"
-#include "Types.h"
 #include "Vertex.h"
+#include "Types.h"
 
 namespace Rml {
 
-/**
-    The abstract base class for application-specific rendering implementation. Your application must provide a concrete
-    implementation of this class and install it through Rml::SetRenderInterface() in order for anything to be rendered.
+class Context;
 
-    @author Peter Curry
+enum class ClipMaskOperation { Clip, ClipIntersect, ClipOut };
+enum class RenderClear { None, Clear, Clone };
+enum class RenderTarget { Layer, MaskImage, RenderTexture };
+enum class BlendMode { Blend, Replace };
+
+/**
+	The abstract base class for application-specific rendering implementation. Your application must provide a concrete
+	implementation of this class and install it through Rml::SetRenderInterface() in order for anything to be rendered.
+
+	@author Peter Curry
  */
 
-class RMLUICORE_API RenderInterface : public NonCopyMoveable {
+class RMLUICORE_API RenderInterface : public NonCopyMoveable
+{
 public:
 	RenderInterface();
 	virtual ~RenderInterface();
@@ -57,8 +65,8 @@ public:
 	/// @param[in] num_indices The number of indices passed to the function. This will always be a multiple of three.
 	/// @param[in] texture The texture to be applied to the geometry. This may be nullptr, in which case the geometry is untextured.
 	/// @param[in] translation The translation to apply to the geometry.
-	virtual void RenderGeometry(Vertex* vertices, int num_vertices, int* indices, int num_indices, TextureHandle texture,
-		const Vector2f& translation) = 0;
+	/// @note Affected by transform: Yes. Affected by scissor: Yes. Affected by clip mask: Yes.
+	virtual void RenderGeometry(Vertex* vertices, int num_vertices, int* indices, int num_indices, TextureHandle texture, const Vector2f& translation) = 0;
 
 	/// Called by RmlUi when it wants to compile geometry it believes will be static for the forseeable future.
 	/// If supported, this should return a handle to an optimised, application-specific version of the data. If
@@ -68,17 +76,17 @@ public:
 	/// @param[in] indices The geometry's index data.
 	/// @param[in] num_indices The number of indices passed to the function. This will always be a multiple of three.
 	/// @param[in] texture The texture to be applied to the geometry. This may be nullptr, in which case the geometry is untextured.
-	/// @return The application-specific compiled geometry. Compiled geometry will be stored and rendered using RenderCompiledGeometry() in future
-	/// calls, and released with ReleaseCompiledGeometry() when it is no longer needed.
+	/// @return The application-specific compiled geometry. Compiled geometry will be stored and rendered using RenderCompiledGeometry() in future calls, and released with ReleaseCompiledGeometry() when it is no longer needed.
 	virtual CompiledGeometryHandle CompileGeometry(Vertex* vertices, int num_vertices, int* indices, int num_indices, TextureHandle texture);
 	/// Called by RmlUi when it wants to render application-compiled geometry.
 	/// @param[in] geometry The application-specific compiled geometry to render.
 	/// @param[in] translation The translation to apply to the geometry.
+	/// @note Affected by transform: Yes. Affected by scissor: Yes. Affected by clip mask: Yes.
 	virtual void RenderCompiledGeometry(CompiledGeometryHandle geometry, const Vector2f& translation);
 	/// Called by RmlUi when it wants to release application-compiled geometry.
 	/// @param[in] geometry The application-specific compiled geometry to release.
 	virtual void ReleaseCompiledGeometry(CompiledGeometryHandle geometry);
-
+	
 	/// Called by RmlUi when it wants to enable or disable scissoring to clip content.
 	/// @param[in] enable True if scissoring is to enabled, false if it is to be disabled.
 	virtual void EnableScissorRegion(bool enable) = 0;
@@ -87,7 +95,12 @@ public:
 	/// @param[in] y The top-most pixel to be rendered. All pixels to the top of this should be clipped.
 	/// @param[in] width The width of the scissored region. All pixels to the right of (x + width) should be clipped.
 	/// @param[in] height The height of the scissored region. All pixels to below (y + height) should be clipped.
+	/// @note Affected by transform: No. Affected by scissor: No. Affected by clip mask: No.
 	virtual void SetScissorRegion(int x, int y, int width, int height) = 0;
+
+	virtual bool EnableClipMask(bool enable);
+	/// @note Affected by transform: Yes. Affected by scissor: Yes. Affected by clip mask: See arguments.
+	virtual void RenderToClipMask(ClipMaskOperation mask_operation, CompiledGeometryHandle geometry, Vector2f translation);
 
 	/// Called by RmlUi when a texture is required by the library.
 	/// @param[out] texture_handle The handle to write the texture handle for the loaded texture to.
@@ -110,6 +123,40 @@ public:
 	/// is submitted. Then it expects the renderer to use an identity matrix or otherwise omit the multiplication with the transform.
 	/// @param[in] transform The new transform to apply, or nullptr if no transform applies to the current element.
 	virtual void SetTransform(const Matrix4f* transform);
+
+	/// Called by RmlUi when...
+	/// @note Affected by transform: No. Affected by scissor: Yes. Affected by clip mask: Yes.
+	virtual void PushLayer(RenderClear clear_new_layer);
+	/// Called by RmlUi when...
+	/// @return A handle to the resulting render texture, or zero if the render target is not a render texture.
+	/// @note Should render the current layer to the target specified using the given blend mode.
+	/// @note Should apply attached filters and mask image, and then clear these attachments.
+	/// @note Render texture targets should be dimensioned and extracted from the bounds of the active scissor.
+	/// @note Affected by transform: No. Affected by scissor: Yes. Affected by clip mask: Yes.
+	virtual TextureHandle PopLayer(RenderTarget render_target, BlendMode blend_mode);
+
+	/// Called by RmlUi when...
+	virtual CompiledShaderHandle CompileShader(const String& name, const Dictionary& parameters);
+	/// Render geometry with the given shader.
+	virtual void RenderShader(CompiledShaderHandle shader, CompiledGeometryHandle geometry, Vector2f translation);
+	/// Called by RmlUi when...
+	virtual void ReleaseCompiledShader(CompiledShaderHandle shader);
+
+	/// Called by RmlUi when...
+	virtual CompiledFilterHandle CompileFilter(const String& name, const Dictionary& parameters);
+	/// Attach filter to be applied on the next call to PopLayer.
+	virtual void AttachFilter(CompiledFilterHandle filter);
+	/// Called by RmlUi when...
+	virtual void ReleaseCompiledFilter(CompiledFilterHandle filter);
+
+	/// Get the context currently being rendered. This is only valid during RenderGeometry,
+	/// CompileGeometry, RenderCompiledGeometry, EnableScissorRegion and SetScissorRegion.
+	Context* GetContext() const;
+
+private:
+	Context* context;
+
+	friend class Rml::Context;
 };
 
 } // namespace Rml

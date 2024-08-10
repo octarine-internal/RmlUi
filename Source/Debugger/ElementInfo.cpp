@@ -4,7 +4,7 @@
  * For the latest information, see http://github.com/mikke89/RmlUi
  *
  * Copyright (c) 2008-2010 CodePoint Ltd, Shift Technology Ltd
- * Copyright (c) 2019-2023 The RmlUi Team, and contributors
+ * Copyright (c) 2019 The RmlUi Team, and contributors
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -15,7 +15,7 @@
  *
  * The above copyright notice and this permission notice shall be included in
  * all copies or substantial portions of the Software.
- *
+ * 
  * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
  * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
  * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -60,11 +60,9 @@ ElementInfo::ElementInfo(const String& tag) : ElementDocument(tag)
 
 ElementInfo::~ElementInfo()
 {
-	RemoveEventListener(EventId::Click, this);
-	RemoveEventListener(EventId::Mouseover, this);
-	RemoveEventListener(EventId::Mouseout, this);
 }
 
+// Initialises the info element.
 bool ElementInfo::Initialise()
 {
 	SetInnerRML(info_rml);
@@ -83,6 +81,7 @@ bool ElementInfo::Initialise()
 	return true;
 }
 
+// Clears the element references.
 void ElementInfo::Reset()
 {
 	hover_element = nullptr;
@@ -122,6 +121,7 @@ void ElementInfo::OnUpdate()
 	}
 }
 
+// Called when an element is destroyed.
 void ElementInfo::OnElementDestroy(Element* element)
 {
 	if (hover_element == element)
@@ -135,7 +135,7 @@ void ElementInfo::RenderHoverElement()
 {
 	if (hover_element)
 	{
-		ElementUtilities::ApplyTransform(*hover_element);
+		ElementUtilities::ApplyTransform(hover_element);
 		for (int i = 0; i < hover_element->GetNumBoxes(); i++)
 		{
 			// Render the content area.
@@ -143,7 +143,12 @@ void ElementInfo::RenderHoverElement()
 			const Box& element_box = hover_element->GetBox(i, box_offset);
 			Vector2f size = element_box.GetSize(BoxArea::Border);
 			size = Vector2f(std::max(size.x, 2.0f), std::max(size.y, 2.0f));
-			Geometry::RenderOutline(hover_element->GetAbsoluteOffset(BoxArea::Border) + box_offset, size, Colourb(255, 0, 0, 255), 1);
+			Geometry::RenderOutline(
+				hover_element->GetAbsoluteOffset(BoxArea::Border) + box_offset,
+				size,
+				Colourb(255, 0, 0, 255), 
+				1
+			);
 		}
 	}
 }
@@ -152,7 +157,7 @@ void ElementInfo::RenderSourceElement()
 {
 	if (source_element && show_source_element)
 	{
-		ElementUtilities::ApplyTransform(*source_element);
+		ElementUtilities::ApplyTransform(source_element);
 
 		for (int i = 0; i < source_element->GetNumBoxes(); i++)
 		{
@@ -164,16 +169,26 @@ void ElementInfo::RenderSourceElement()
 			Geometry::RenderBox(border_offset + element_box.GetPosition(BoxArea::Content), element_box.GetSize(), Colourb(158, 214, 237, 128));
 
 			// Padding area:
-			Geometry::RenderBox(border_offset + element_box.GetPosition(BoxArea::Padding), element_box.GetSize(BoxArea::Padding),
-				border_offset + element_box.GetPosition(BoxArea::Content), element_box.GetSize(), Colourb(135, 122, 214, 128));
+			Geometry::RenderBox(border_offset + element_box.GetPosition(BoxArea::Padding), element_box.GetSize(BoxArea::Padding), border_offset + element_box.GetPosition(BoxArea::Content), element_box.GetSize(), Colourb(135, 122, 214, 128));
 
 			// Border area:
-			Geometry::RenderBox(border_offset + element_box.GetPosition(BoxArea::Border), element_box.GetSize(BoxArea::Border),
-				border_offset + element_box.GetPosition(BoxArea::Padding), element_box.GetSize(BoxArea::Padding), Colourb(133, 133, 133, 128));
+			Geometry::RenderBox(border_offset + element_box.GetPosition(BoxArea::Border), element_box.GetSize(BoxArea::Border), border_offset + element_box.GetPosition(BoxArea::Padding), element_box.GetSize(BoxArea::Padding), Colourb(133, 133, 133, 128));
 
 			// Border area:
-			Geometry::RenderBox(border_offset + element_box.GetPosition(BoxArea::Margin), element_box.GetSize(BoxArea::Margin),
-				border_offset + element_box.GetPosition(BoxArea::Border), element_box.GetSize(BoxArea::Border), Colourb(240, 255, 131, 128));
+			Geometry::RenderBox(border_offset + element_box.GetPosition(BoxArea::Margin), element_box.GetSize(BoxArea::Margin), border_offset + element_box.GetPosition(BoxArea::Border), element_box.GetSize(BoxArea::Border), Colourb(240, 255, 131, 128));
+		}
+
+		if (Context* context = source_element->GetContext())
+		{
+			context->GetRenderState().SetTransform(nullptr);
+
+			Rectanglef bounding_box;
+			if (ElementUtilities::GetBoundingBox(bounding_box, source_element, BoxArea::Auto))
+			{
+				bounding_box.Extend(1.f);
+				Math::ExpandToPixelGrid(bounding_box);
+				Geometry::RenderOutline(bounding_box.Position(), bounding_box.Size(), Colourb(255, 255, 255, 200), 1.f);
+			}
 		}
 	}
 }
@@ -191,7 +206,7 @@ void ElementInfo::ProcessEvent(Event& event)
 			if (target_element->GetOwnerDocument() == this)
 			{
 				const String& id = event.GetTargetElement()->GetId();
-
+				
 				if (id == "close_button")
 				{
 					if (IsVisible())
@@ -204,20 +219,18 @@ void ElementInfo::ProcessEvent(Event& event)
 				}
 				else if (id == "show_source")
 				{
-					show_source_element = !target_element->IsClassSet("active");
-					;
+					show_source_element = !target_element->IsClassSet("active");;
 					target_element->SetClass("active", show_source_element);
 				}
 				else if (id == "enable_element_select")
 				{
-					enable_element_select = !target_element->IsClassSet("active");
-					;
+					enable_element_select = !target_element->IsClassSet("active");;
 					target_element->SetClass("active", enable_element_select);
 				}
 				else if (target_element->GetTagName() == "pseudo" && source_element)
 				{
 					const String name = target_element->GetAttribute<String>("name", "");
-
+					
 					if (!name.empty())
 					{
 						bool pseudo_active = target_element->IsClassSet("active");
@@ -404,7 +417,7 @@ void ElementInfo::UpdateSourceElement()
 					Element* grandchild = child->GetChild(j);
 					const String grandchild_name = grandchild->GetAttribute<String>("name", "");
 					bool active = (EraseFromList(list, grandchild_name) == 1);
-					if (!active)
+					if(!active)
 						child->RemoveChild(grandchild);
 				}
 				// Finally, create new pseudo buttons for the rest of the active pseudo classes.
@@ -430,7 +443,7 @@ void ElementInfo::UpdateSourceElement()
 				String name;
 				String value;
 
-				// The element's attribute list is not always synchronized with its internal values, fetch
+				// The element's attribute list is not always synchronized with its internal values, fetch  
 				// them manually here (see e.g. Element::OnAttributeChange for relevant attributes)
 				{
 					name = "id";
@@ -446,12 +459,12 @@ void ElementInfo::UpdateSourceElement()
 				}
 			}
 
-			for (const auto& pair : source_element->GetAttributes())
+			for(const auto& pair : source_element->GetAttributes())
 			{
 				auto& name = pair.first;
 				auto& variant = pair.second;
 				String value = StringUtilities::EncodeRml(variant.Get<String>());
-				if (name != "class" && name != "style" && name != "id")
+				if(name != "class" && name != "style" && name != "id") 
 					attributes += CreateString(name.size() + value.size() + 32, "%s: <em>%s</em><br />", name.c_str(), value.c_str());
 			}
 
@@ -530,12 +543,13 @@ void ElementInfo::UpdateSourceElement()
 			const Vector2f element_offset = source_element->GetRelativeOffset(BoxArea::Border);
 			const Vector2f element_size = source_element->GetBox().GetSize(BoxArea::Border);
 			Element* offset_parent = source_element->GetOffsetParent();
-			const String offset_parent_rml =
-				(offset_parent ? StringUtilities::EncodeRml(offset_parent->GetAddress(false, false)) : String("<em>none</em>"));
+			const String offset_parent_rml = (offset_parent ? StringUtilities::EncodeRml(offset_parent->GetAddress(false, false)) : String("<em>none</em>"));
 
-			position = "<span class='name'>left: </span><em>" + ToString(element_offset.x) + "px</em><br/>" + "<span class='name'>top: </span><em>" +
-				ToString(element_offset.y) + "px</em><br/>" + "<span class='name'>width: </span><em>" + ToString(element_size.x) + "px</em><br/>" +
-				"<span class='name'>height: </span><em>" + ToString(element_size.y) + "px</em><br/>" +
+			position = 
+				"<span class='name'>left: </span><em>"   + ToString(element_offset.x) + "px</em><br/>" +
+				"<span class='name'>top: </span><em>"    + ToString(element_offset.y) + "px</em><br/>" +
+				"<span class='name'>width: </span><em>"  + ToString(element_size.x)   + "px</em><br/>" +
+				"<span class='name'>height: </span><em>" + ToString(element_size.y)   + "px</em><br/>" +
 				"<span class='name'>offset parent: </span><p style='display: inline' id='offset_parent'>" + offset_parent_rml + "</p>";
 		}
 		else
@@ -603,11 +617,13 @@ void ElementInfo::UpdateSourceElement()
 				if (IsDebuggerElement(child))
 					continue;
 
-				String child_name = child->GetAddress(false, false);
-				auto document = rmlui_dynamic_cast<ElementDocument*>(child);
-				if (document && !document->GetTitle().empty())
-					child_name += " (" + document->GetTitle() + ')';
-
+				String child_name = child->GetTagName();
+				const String child_id = child->GetId();
+				if (!child_id.empty())
+				{
+					child_name += "#";
+					child_name += child_id;
+				}
 				const char* non_dom_string = (i >= num_dom_children ? " class=\"non_dom\"" : "");
 
 				children += CreateString(child_name.size() + 40, "<p id=\"c %d\"%s>%s</p>", i, non_dom_string, child_name.c_str());
@@ -620,7 +636,7 @@ void ElementInfo::UpdateSourceElement()
 				children_content->RemoveChild(children_content->GetChild(0));
 			children_rml.clear();
 		}
-		else if (children != children_rml)
+		else if(children != children_rml)
 		{
 			children_content->SetInnerRML(children);
 			children_rml = std::move(children);
@@ -632,7 +648,7 @@ void ElementInfo::BuildElementPropertiesRML(String& property_rml, Element* eleme
 {
 	NamedPropertyList property_list;
 
-	for (auto it = element->IterateLocalProperties(); !it.AtEnd(); ++it)
+	for(auto it = element->IterateLocalProperties(); !it.AtEnd(); ++it)
 	{
 		PropertyId property_id = it.GetId();
 		const String& property_name = it.GetName();
@@ -642,26 +658,22 @@ void ElementInfo::BuildElementPropertiesRML(String& property_rml, Element* eleme
 		if (primary_element->GetProperty(property_id) != prop)
 			continue;
 
-		property_list.push_back(NamedProperty{property_name, prop});
+		property_list.push_back(NamedProperty{ property_name, prop });
 	}
 
-	std::sort(property_list.begin(), property_list.end(), [](const NamedProperty& a, const NamedProperty& b) {
-		if (a.second->source && !b.second->source)
-			return false;
-		if (!a.second->source && b.second->source)
-			return true;
-		if (a.second->specificity < b.second->specificity)
-			return false;
-		if (a.second->specificity > b.second->specificity)
-			return true;
-		if (a.second->definition && !b.second->definition)
-			return false;
-		if (!a.second->definition && b.second->definition)
-			return true;
-		const String& a_name = StyleSheetSpecification::GetPropertyName(a.second->definition->GetId());
-		const String& b_name = StyleSheetSpecification::GetPropertyName(b.second->definition->GetId());
-		return a_name < b_name;
-	});
+	std::sort(property_list.begin(), property_list.end(),
+		[](const NamedProperty& a, const NamedProperty& b) {
+			if (a.second->source && !b.second->source) return false;
+			if (!a.second->source && b.second->source) return true;
+			if (a.second->specificity < b.second->specificity) return false;
+			if (a.second->specificity > b.second->specificity) return true;
+			if (a.second->definition && !b.second->definition) return false;
+			if (!a.second->definition && b.second->definition) return true;
+			const String& a_name = StyleSheetSpecification::GetPropertyName(a.second->definition->GetId());
+			const String& b_name = StyleSheetSpecification::GetPropertyName(b.second->definition->GetId());
+			return a_name < b_name;
+		}
+	);
 
 	if (!property_list.empty())
 	{
@@ -677,7 +689,7 @@ void ElementInfo::BuildElementPropertiesRML(String& property_rml, Element* eleme
 		for (auto& named_property : property_list)
 		{
 			auto& source = named_property.second->source;
-			if (source.get() != previous_source || first_iteration)
+			if(source.get() != previous_source || first_iteration)
 			{
 				previous_source = source.get();
 				first_iteration = false;
@@ -733,10 +745,11 @@ void ElementInfo::UpdateTitle()
 	}
 }
 
+
 bool ElementInfo::IsDebuggerElement(Element* element)
 {
 	return element->GetOwnerDocument()->GetId().find("rmlui-debug-") == 0;
 }
 
-} // namespace Debugger
-} // namespace Rml
+}
+}

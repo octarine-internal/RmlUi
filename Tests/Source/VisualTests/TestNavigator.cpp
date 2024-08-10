@@ -4,7 +4,7 @@
  * For the latest information, see http://github.com/mikke89/RmlUi
  *
  * Copyright (c) 2008-2010 CodePoint Ltd, Shift Technology Ltd
- * Copyright (c) 2019-2023 The RmlUi Team, and contributors
+ * Copyright (c) 2019 The RmlUi Team, and contributors
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -27,14 +27,12 @@
  */
 
 #include "TestNavigator.h"
-#include "CaptureScreen.h"
-#include "TestConfig.h"
 #include "TestSuite.h"
+#include "TestConfig.h"
+#include "CaptureScreen.h"
 #include "TestViewer.h"
 #include <RmlUi/Core/Context.h>
 #include <RmlUi/Core/Element.h>
-#include <RmlUi/Core/ElementDocument.h>
-#include <RmlUi/Core/Math.h>
 #include <Shell.h>
 #include <cstdio>
 
@@ -42,22 +40,20 @@
 // render to be read back out. If we don't wait, we end up saving a screenshot of the previous test.
 constexpr int iteration_wait_frame_count = 2;
 
-TestNavigator::TestNavigator(Rml::RenderInterface* render_interface, Rml::Context* context, TestViewer* viewer, TestSuiteList _test_suites,
-	int start_suite, int start_case) :
+
+TestNavigator::TestNavigator(Rml::RenderInterface* render_interface, Rml::Context* context, TestViewer* viewer, TestSuiteList test_suites,
+	int start_index) :
 	render_interface(render_interface),
-	context(context), viewer(viewer), test_suites(std::move(_test_suites))
+	context(context), viewer(viewer), test_suites(std::move(test_suites))
 {
 	RMLUI_ASSERT(context);
-	RMLUI_ASSERTMSG(!test_suites.empty(), "At least one test suite is required.");
+	RMLUI_ASSERTMSG(!this->test_suites.empty(), "At least one test suite is required.");
 	context->GetRootElement()->AddEventListener(Rml::EventId::Keydown, this, true);
 	context->GetRootElement()->AddEventListener(Rml::EventId::Keydown, this);
 	context->GetRootElement()->AddEventListener(Rml::EventId::Textinput, this);
 	context->GetRootElement()->AddEventListener(Rml::EventId::Change, this);
-
-	suite_index = Rml::Math::Clamp(start_suite, 0, (int)test_suites.size() - 1);
-
-	if (start_case > 0)
-		CurrentSuite().SetIndex(start_case);
+	if (start_index > 0)
+		CurrentSuite().SetIndex(start_index);
 	LoadActiveTest();
 }
 
@@ -72,7 +68,7 @@ TestNavigator::~TestNavigator()
 
 void TestNavigator::Update()
 {
-	if (iteration_state != IterationState::None)
+	if(iteration_state != IterationState::None)
 	{
 		RMLUI_ASSERT(iteration_index >= 0);
 
@@ -125,9 +121,9 @@ void TestNavigator::ProcessEvent(Rml::Event& event)
 	// Keydown events in capture phase to override text input
 	if (event == Rml::EventId::Keydown && event.GetPhase() == Rml::EventPhase::Capture)
 	{
-		const auto key_identifier = (Rml::Input::KeyIdentifier)event.GetParameter<int>("key_identifier", 0);
-		const bool key_ctrl = event.GetParameter<bool>("ctrl_key", false);
-		const bool key_shift = event.GetParameter<bool>("shift_key", false);
+		const auto key_identifier = (Rml::Input::KeyIdentifier)event.GetParameter< int >("key_identifier", 0);
+		const bool key_ctrl = event.GetParameter< bool >("ctrl_key", false);
+		const bool key_shift = event.GetParameter< bool >("shift_key", false);
 
 		Rml::Element* element_filter_input = event.GetCurrentElement()->GetElementById("filterinput");
 		RMLUI_ASSERT(element_filter_input);
@@ -144,8 +140,8 @@ void TestNavigator::ProcessEvent(Rml::Event& event)
 				{
 					if (result.is_equal)
 					{
-						Rml::Log::Message(Rml::Log::LT_INFO, "%s compares EQUAL to the reference image %s.", CurrentSuite().GetFilename().c_str(),
-							compare_path.c_str());
+						Rml::Log::Message(Rml::Log::LT_INFO, "%s compares EQUAL to the reference image %s.",
+							CurrentSuite().GetFilename().c_str(), compare_path.c_str());
 					}
 					else
 					{
@@ -158,8 +154,7 @@ void TestNavigator::ProcessEvent(Rml::Event& event)
 				}
 				else
 				{
-					Rml::Log::Message(Rml::Log::LT_ERROR, "Comparison of %s failed.\n%s", CurrentSuite().GetFilename().c_str(),
-						result.error_msg.c_str());
+					Rml::Log::Message(Rml::Log::LT_ERROR, "Comparison of %s failed.\n%s", CurrentSuite().GetFilename().c_str(), result.error_msg.c_str());
 				}
 			}
 		}
@@ -231,17 +226,13 @@ void TestNavigator::ProcessEvent(Rml::Event& event)
 			{
 				element_filter_input->Blur();
 			}
-			else if (viewer->IsNavigationLocked())
-			{
-				element_filter_input->GetOwnerDocument()->Focus();
-			}
 			else if (goto_index >= 0)
 			{
 				goto_index = -1;
 				UpdateGoToText();
 			}
 		}
-		else if (key_identifier == Rml::Input::KI_RETURN || key_identifier == Rml::Input::KI_NUMPADENTER)
+		else if (key_identifier == Rml::Input::KI_RETURN)
 		{
 			element_filter_input->Blur();
 		}
@@ -257,9 +248,9 @@ void TestNavigator::ProcessEvent(Rml::Event& event)
 	}
 
 	// Keydown events in target/bubble phase ignored when focusing on input.
-	if (event == Rml::EventId::Keydown && event.GetPhase() != Rml::EventPhase::Capture && !viewer->IsNavigationLocked())
+	if (event == Rml::EventId::Keydown && event.GetPhase() != Rml::EventPhase::Capture)
 	{
-		const auto key_identifier = (Rml::Input::KeyIdentifier)event.GetParameter<int>("key_identifier", 0);
+		const auto key_identifier = (Rml::Input::KeyIdentifier)event.GetParameter< int >("key_identifier", 0);
 
 		if (key_identifier == Rml::Input::KI_LEFT)
 		{
@@ -313,14 +304,14 @@ void TestNavigator::ProcessEvent(Rml::Event& event)
 				goto_index = -1;
 			else
 				goto_index = goto_index / 10;
-
+			
 			UpdateGoToText();
 		}
 	}
 
 	if (event == Rml::EventId::Textinput && goto_index >= 0)
 	{
-		const Rml::String text = event.GetParameter<Rml::String>("text", "");
+		const Rml::String text = event.GetParameter< Rml::String >("text", "");
 
 		for (const char c : text)
 		{
@@ -352,7 +343,7 @@ void TestNavigator::ProcessEvent(Rml::Event& event)
 		Rml::Element* element = event.GetTargetElement();
 		if (element->GetId() == "filterinput")
 		{
-			CurrentSuite().SetFilter(event.GetParameter<Rml::String>("value", ""));
+			CurrentSuite().SetFilter(event.GetParameter< Rml::String >("value", ""));
 			LoadActiveTest();
 		}
 	}
@@ -378,17 +369,18 @@ ComparisonResult TestNavigator::CompareCurrentView()
 {
 	const Rml::String filename = GetImageFilenameFromCurrentTest();
 
-	ComparisonResult result = CompareScreenToPreviousCapture(render_interface, filename, nullptr);
+	ComparisonResult result = CompareScreenToPreviousCapture(render_interface, filename, true, nullptr);
 
 	return result;
 }
 
+
 bool TestNavigator::CaptureCurrentView()
 {
 	const Rml::String filename = GetImageFilenameFromCurrentTest();
-
+	
 	bool result = CaptureScreenshot(filename, 1060);
-
+	
 	return result;
 }
 
@@ -442,18 +434,15 @@ void TestNavigator::StopTestSuiteIteration()
 	{
 		if (iteration_index == num_tests)
 		{
-			Rml::Log::Message(Rml::Log::LT_INFO, "Successfully captured %d document screenshots to directory: %s", iteration_index,
-				output_directory.c_str());
+			Rml::Log::Message(Rml::Log::LT_INFO, "Successfully captured %d document screenshots to directory: %s", iteration_index, output_directory.c_str());
 		}
 		else if (iteration_index == num_filtered_tests)
 		{
-			Rml::Log::Message(Rml::Log::LT_INFO, "Successfully captured %d document screenshots (filtered out of %d total tests) to directory: %s",
-				iteration_index, num_tests, output_directory.c_str());
+			Rml::Log::Message(Rml::Log::LT_INFO, "Successfully captured %d document screenshots (filtered out of %d total tests) to directory: %s", iteration_index, num_tests, output_directory.c_str());
 		}
 		else
 		{
-			Rml::Log::Message(Rml::Log::LT_ERROR, "Test suite capture aborted after %d of %d test(s). Output directory: %s", iteration_index,
-				num_tests, output_directory.c_str());
+			Rml::Log::Message(Rml::Log::LT_ERROR, "Test suite capture aborted after %d of %d test(s). Output directory: %s", iteration_index, num_tests, output_directory.c_str());
 		}
 	}
 	else if (iteration_state == IterationState::Comparison)
@@ -465,8 +454,8 @@ void TestNavigator::StopTestSuiteIteration()
 		Rml::Vector<int> not_equal;
 		Rml::Vector<int> failed;
 		Rml::Vector<int> skipped;
-
-		for (int i = 0; i < (int)comparison_results.size(); i++)
+		 
+		for(int i = 0; i < (int)comparison_results.size(); i++)
 		{
 			const ComparisonResult& comparison = comparison_results[i];
 
@@ -480,8 +469,8 @@ void TestNavigator::StopTestSuiteIteration()
 				not_equal.push_back(i);
 		}
 
-		Rml::String summary = Rml::CreateString(256, "  Total tests: %d\n  Equal: %d\n  Not equal: %d\n  Failed: %d\n  Skipped: %d", num_tests,
-			(int)equal.size(), (int)not_equal.size(), (int)failed.size(), (int)skipped.size());
+		Rml::String summary = Rml::CreateString(256, "  Total tests: %d\n  Equal: %d\n  Not equal: %d\n  Failed: %d\n  Skipped: %d",
+			num_tests, (int)equal.size(), (int)not_equal.size(), (int)failed.size(), (int)skipped.size());
 
 		if (!suite.GetFilter().empty())
 			summary += "\n  Filter applied: " + suite.GetFilter();
@@ -496,8 +485,7 @@ void TestNavigator::StopTestSuiteIteration()
 		}
 		else
 		{
-			Rml::Log::Message(Rml::Log::LT_ERROR, "Test suite comparison aborted after %d of %d test(s).\n%s", iteration_index, num_tests,
-				summary.c_str());
+			Rml::Log::Message(Rml::Log::LT_ERROR, "Test suite comparison aborted after %d of %d test(s).\n%s", iteration_index, num_tests, summary.c_str());
 		}
 
 		Rml::String log;
@@ -511,7 +499,7 @@ void TestNavigator::StopTestSuiteIteration()
 		for (int i : not_equal)
 		{
 			suite.SetIndex(i);
-			log += Rml::CreateString(256, "%5d   %5.1f%%   %s\n", i + 1, comparison_results[i].similarity_score * 100.0, suite.GetFilename().c_str());
+			log += Rml::CreateString(256, "%5d   %5.1f%%   %s\n", i + 1, comparison_results[i].similarity_score*100.0, suite.GetFilename().c_str());
 			if (!comparison_results[i].error_msg.empty())
 				log += "          " + comparison_results[i].error_msg + "\n";
 		}
@@ -539,9 +527,8 @@ void TestNavigator::StopTestSuiteIteration()
 		bool save_result = SaveFile(log_path, log);
 		if (save_result && failed.empty())
 			Rml::Log::Message(Rml::Log::LT_INFO, "Comparison log output written to %s", log_path.c_str());
-		else if (save_result && !failed.empty())
-			Rml::Log::Message(Rml::Log::LT_ERROR, "Comparison log output written to %s.\nSome comparisons failed, see log output for details.",
-				log_path.c_str());
+		else if(save_result && !failed.empty())
+			Rml::Log::Message(Rml::Log::LT_ERROR, "Comparison log output written to %s.\nSome comparisons failed, see log output for details.", log_path.c_str());
 		else
 			Rml::Log::Message(Rml::Log::LT_ERROR, "Failed writing comparison log output to file %s", log_path.c_str());
 	}
@@ -584,7 +571,7 @@ void TestNavigator::ShowReference(bool show, bool clear)
 	Rml::String error_msg;
 	if (show && !reference_geometry.texture_handle)
 	{
-		reference_comparison = CompareScreenToPreviousCapture(render_interface, GetImageFilenameFromCurrentTest(), &reference_geometry);
+		reference_comparison = CompareScreenToPreviousCapture(render_interface, GetImageFilenameFromCurrentTest(), false, &reference_geometry);
 
 		if (!reference_comparison.success)
 			error_msg = reference_comparison.error_msg;

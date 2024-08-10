@@ -4,7 +4,7 @@
  * For the latest information, see http://github.com/mikke89/RmlUi
  *
  * Copyright (c) 2008-2010 CodePoint Ltd, Shift Technology Ltd
- * Copyright (c) 2019-2023 The RmlUi Team, and contributors
+ * Copyright (c) 2019 The RmlUi Team, and contributors
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -38,10 +38,12 @@ using namespace Rml;
 
 namespace {
 
+
 static const String document_rml = R"(
 <rml>
 <head>
 	<title>Test</title>
+	<link type="text/rcss" href="/assets/rml.rcss"/>
 	<link type="text/template" href="/assets/window.rml"/>
 	<style>
 		body.window
@@ -50,8 +52,8 @@ static const String document_rml = R"(
 			right: 50px;
 			top: 30px;
 			bottom: 30px;
-			max-width: none;
-			max-height: none;
+			max-width: -1px;
+			max-height: -1px;
 		}
 		div#content
 		{
@@ -79,8 +81,6 @@ static const String document_rml = R"(
 <p>{{ s3.val }}</p>
 <p>{{ s4.val }}</p>
 <p>{{ s5.val }}</p>
-<p>{{ simple }}</p>
-<p>{{ scoped }}</p>
 
 <h1>Basic</h1>
 <p>{{ basic.a }}</p>
@@ -89,8 +89,6 @@ static const String document_rml = R"(
 <p>{{ basic.d }}</p>
 <p>{{ basic.e }}</p>
 <p>{{ basic.f }}</p>
-<p id="simple" data-event-click="basic.simple = 2">{{ basic.simple }}</p>
-<p>{{ basic.scoped }}</p>
 
 <h1>Wrapped</h1>
 <p>{{ wrapped.a.val }}</p>
@@ -120,6 +118,7 @@ static const String inside_string_rml = R"(
 <rml>
 <head>
 	<title>Test</title>
+	<link type="text/rcss" href="/assets/rml.rcss"/>
 	<link type="text/template" href="/assets/window.rml"/>
 	<style>
 		body.window
@@ -143,64 +142,24 @@ static const String inside_string_rml = R"(
 <p>before {{ 'i{{test}}23' }} test</p>
 <p>a {{ 'i' }} b {{ 'j' }} c</p>
 <p>{{i0}}</p>
-<p>{{ 'i{}' }}</p>
 
 </div>
 </body>
 </rml>	
 )";
 
-static const String aliasing_rml = R"(
-<rml>
-<head>
-	<title>Test</title>
-	<link type="text/rcss" href="/assets/rml.rcss"/>
-	<link type="text/rcss" href="/assets/invader.rcss"/>
-	<link type="text/template" href="/../Tests/Data/UnitTests/data-title.rml"/>
-	<style>
-		body {
-			width: 600px;
-			height: 400px;
-			background: #ccc;
-			color: #333;
-		}
-		.title-wrapper { border: 1dp red; }
-		.icon { width: 64dp; height: 64dp; display: inline-block; }
-		.icon[icon="a"] { decorator: image("/assets/high_scores_alien_1.tga"); }
-		.icon[icon="b"] { decorator: image("/assets/high_scores_alien_2.tga"); }
-	</style>
-</head>
-
-<body data-model="basics">
-<p>{{ i0 }}</p>
-<p data-alias-differentname="i0">{{ differentname }}</p>
-<div data-alias-title="s0" data-alias-icon="wrapped.a.val" id="w1">
-	<template src="data-title"/>
-</div>
-<div data-alias-title="s1" data-alias-icon="wrapped.b.val" id="w2">
-	<template src="data-title"/>
-</div>
-</body>
-</rml>
-)";
-
-struct StringWrap {
+struct StringWrap
+{
 	StringWrap(String val = "wrap_default") : val(val) {}
 	String val;
 };
 
-enum SimpleEnum { Simple_Zero = 0, Simple_One, Simple_Two };
-
-enum class ScopedEnum : uint64_t { Zero = 0, One, Two };
-
-struct Globals {
+struct Globals
+{
 	int i0 = 0;
 	int* i1 = new int(1);
 	UniquePtr<int> i2 = MakeUnique<int>(2);
 	SharedPtr<int> i3 = MakeShared<int>(3);
-
-	SimpleEnum simple = Simple_One;
-	ScopedEnum scoped = ScopedEnum::One;
 
 	String s0 = "s0";
 	String* s1 = new String("s1");
@@ -217,113 +176,117 @@ struct Globals {
 	UniquePtr<const StringWrap> x4 = MakeUnique<StringWrap>("x3"); // Invalid: const pointer
 } globals;
 
-struct Basic {
+struct Basic
+{
 	int a = 1;
 	int* b = new int(2);
 
-	SimpleEnum simple = Simple_One;
-	ScopedEnum scoped = ScopedEnum::One;
-
-	int GetC()
-	{
+	int GetC() {
 		static int v = 5;
 		return v;
 	}
-	int& GetD()
-	{
+	int& GetD() {
 		static int v = 5;
 		return v;
 	}
-	int* GetE()
-	{
+	int* GetE() {
 		static int v = 6;
 		return &v;
 	}
-	UniquePtr<int> GetF() { return MakeUnique<int>(7); }
+	UniquePtr<int> GetF() {
+		return MakeUnique<int>(7);
+	}
 
 	// Invalid: const member
 	const int x0 = 2;
 	// Invalid: const pointer
 	const int* x1 = new int(3);
 	// Invalid: const qualified member function
-	int GetX2() const { return 4; }
+	int GetX2() const {
+		return 4;
+	}
 	// Invalid: const reference return
-	const int& GetX3()
-	{
+	const int& GetX3() {
 		static int g = 7;
 		return g;
 	}
 	// Invalid: const pointer return
-	const int* GetX4()
-	{
+	const int* GetX4() {
 		static int h = 8;
 		return &h;
 	}
 	// Invalid: Illegal signature
-	int GetX5(int) { return 9; }
+	int GetX5(int) {
+		return 9;
+	}
 };
 
-struct Wrapped {
-	StringWrap a = {"a"};
+struct Wrapped
+{
+	StringWrap a = { "a" };
 	StringWrap* b = new StringWrap("b");
 	UniquePtr<StringWrap> c = MakeUnique<StringWrap>("c");
 
-	StringWrap& GetD()
-	{
-		static StringWrap v = {"e"};
+	StringWrap& GetD() {
+		static StringWrap v = { "e" };
 		return v;
 	}
-	StringWrap* GetE()
-	{
-		static StringWrap v = {"f"};
+	StringWrap* GetE() {
+		static StringWrap v = { "f" };
 		return &v;
 	}
-
+	
 	// Invalid: const pointer
 	const StringWrap* x0 = new StringWrap("x0");
 	// Invalid (run-time): Returning non-scalar variable by value.
-	StringWrap GetX1() { return {"x1"}; }
+	StringWrap GetX1() {
+		return { "x1" };
+	}
 	// Invalid (run-time): Returning non-scalar variable by value.
-	UniquePtr<StringWrap> GetX2() { return MakeUnique<StringWrap>("x2"); }
+	UniquePtr<StringWrap> GetX2() {
+		return MakeUnique<StringWrap>("x2");
+	}
 };
 
 using StringWrapPtr = UniquePtr<StringWrap>;
 
-struct Pointed {
+struct Pointed
+{
 	StringWrapPtr a = MakeUnique<StringWrap>("a");
 
-	StringWrapPtr& GetB()
-	{
+	StringWrapPtr& GetB() {
 		static StringWrapPtr v = MakeUnique<StringWrap>("b");
 		return v;
 	}
-	StringWrapPtr* GetC()
-	{
+	StringWrapPtr* GetC() {
 		static StringWrapPtr v = MakeUnique<StringWrap>("c");
 		return &v;
 	}
-
+	
 	// Invalid: We disallow recursive pointer types (pointer to pointer)
 	StringWrapPtr* x0 = new StringWrapPtr(new StringWrap("x0"));
 
 	// Invalid (run-time error): Only scalar data members can be returned by value
-	StringWrapPtr GetX1() { return MakeUnique<StringWrap>("x1"); }
+	StringWrapPtr GetX1() {
+		return MakeUnique<StringWrap>("x1");
+	}
+
 };
 
-struct Arrays {
-	Vector<int> a = {10, 11, 12};
-	Vector<int*> b = {new int(20), new int(21), new int(22)};
-	Vector<StringWrap> c = {StringWrap("c1"), StringWrap("c2"), StringWrap("c3")};
-	Vector<StringWrap*> d = {new StringWrap("d1"), new StringWrap("d2"), new StringWrap("d3")};
+struct Arrays
+{
+	Vector<int> a = { 10, 11, 12 };
+	Vector<int*> b = { new int(20), new int(21), new int(22) };
+	Vector<StringWrap> c = { StringWrap("c1"), StringWrap("c2"), StringWrap("c3") };
+	Vector<StringWrap*> d = { new StringWrap("d1"), new StringWrap("d2"), new StringWrap("d3") };
 	Vector<StringWrapPtr> e;
-
+	
 	// Invalid: const pointer
-	Vector<const int*> x0 = {new int(30), new int(31), new int(32)};
+	Vector<const int*> x0 = { new int(30), new int(31), new int(32) };
 	// Invalid: const pointer
 	Vector<UniquePtr<const StringWrap>> x1;
-
-	Arrays()
-	{
+	
+	Arrays() {
 		e.emplace_back(MakeUnique<StringWrap>("e1"));
 		e.emplace_back(MakeUnique<StringWrap>("e2"));
 		e.emplace_back(MakeUnique<StringWrap>("e3"));
@@ -334,6 +297,8 @@ struct Arrays {
 };
 
 DataModelHandle model_handle;
+
+
 
 bool InitializeDataBindings(Context* context)
 {
@@ -360,14 +325,12 @@ bool InitializeDataBindings(Context* context)
 		constructor.Bind("s4", &globals.s4);
 		constructor.Bind("s5", &globals.s5);
 
-		constructor.Bind("simple", &globals.simple);
-		constructor.Bind("scoped", &globals.scoped);
 		// Invalid: Each of the following should give a compile-time failure.
-		// constructor.Bind("x0", &globals.x0);
-		// constructor.Bind("x1", &globals.x1);
-		// constructor.Bind("x2", &globals.x2);
-		// constructor.Bind("x3", &globals.x3);
-		// constructor.Bind("x4", &globals.x4);
+		//constructor.Bind("x0", &globals.x0);
+		//constructor.Bind("x1", &globals.x1);
+		//constructor.Bind("x2", &globals.x2);
+		//constructor.Bind("x3", &globals.x3);
+		//constructor.Bind("x4", &globals.x4);
 	}
 
 	if (auto handle = constructor.RegisterStruct<Basic>())
@@ -378,18 +341,16 @@ bool InitializeDataBindings(Context* context)
 		handle.RegisterMember("d", &Basic::GetD);
 		handle.RegisterMember("e", &Basic::GetE);
 		handle.RegisterMember("f", &Basic::GetF);
-		handle.RegisterMember("simple", &Basic::simple);
-		handle.RegisterMember("scoped", &Basic::scoped);
 
-		// handle.RegisterMember("x0", &Basic::x0);
-		// handle.RegisterMember("x1", &Basic::x1);
-		// handle.RegisterMember("x2", &Basic::GetX2);
-		// handle.RegisterMember("x3", &Basic::GetX3);
-		// handle.RegisterMember("x4", &Basic::GetX4);
-		// handle.RegisterMember("x5", &Basic::GetX5);
+		//handle.RegisterMember("x0", &Basic::x0);
+		//handle.RegisterMember("x1", &Basic::x1);
+		//handle.RegisterMember("x2", &Basic::GetX2);
+		//handle.RegisterMember("x3", &Basic::GetX3);
+		//handle.RegisterMember("x4", &Basic::GetX4);
+		//handle.RegisterMember("x5", &Basic::GetX5);
 	}
 	constructor.Bind("basic", new Basic);
-
+	
 	if (auto handle = constructor.RegisterStruct<Wrapped>())
 	{
 		handle.RegisterMember("a", &Wrapped::a);
@@ -398,20 +359,20 @@ bool InitializeDataBindings(Context* context)
 		handle.RegisterMember("d", &Wrapped::GetD);
 		handle.RegisterMember("e", &Wrapped::GetE);
 
-		// handle.RegisterMember("x0", &Wrapped::x0);
-		// handle.RegisterMember("x1", &Wrapped::GetX1);
-		// handle.RegisterMember("x2", &Wrapped::GetX2);
+		//handle.RegisterMember("x0", &Wrapped::x0);
+		//handle.RegisterMember("x1", &Wrapped::GetX1);
+		//handle.RegisterMember("x2", &Wrapped::GetX2);
 	}
 	constructor.Bind("wrapped", new Wrapped);
-
+	
 	if (auto handle = constructor.RegisterStruct<Pointed>())
 	{
 		handle.RegisterMember("a", &Pointed::a);
 		handle.RegisterMember("b", &Pointed::GetB);
 		handle.RegisterMember("c", &Pointed::GetC);
 
-		// handle.RegisterMember("x0", &Pointed::x0);
-		// handle.RegisterMember("x1", &Pointed::GetX1);
+		//handle.RegisterMember("x0", &Pointed::x0);
+		//handle.RegisterMember("x1", &Pointed::GetX1);
 	}
 	constructor.Bind("pointed", new Pointed);
 
@@ -421,8 +382,8 @@ bool InitializeDataBindings(Context* context)
 	constructor.RegisterArray<decltype(Arrays::d)>();
 	constructor.RegisterArray<decltype(Arrays::e)>();
 
-	// constructor.RegisterArray<decltype(Arrays::x0)>();
-	// constructor.RegisterArray<decltype(Arrays::x1)>();
+	//constructor.RegisterArray<decltype(Arrays::x0)>();
+	//constructor.RegisterArray<decltype(Arrays::x1)>();
 
 	if (auto handle = constructor.RegisterStruct<Arrays>())
 	{
@@ -432,17 +393,18 @@ bool InitializeDataBindings(Context* context)
 		handle.RegisterMember("d", &Arrays::d);
 		handle.RegisterMember("e", &Arrays::e);
 
-		// handle.RegisterMember("x0", &Arrays::x0);
-		// handle.RegisterMember("x1", &Arrays::x1);
+		//handle.RegisterMember("x0", &Arrays::x0);
+		//handle.RegisterMember("x1", &Arrays::x1);
 	}
 	constructor.Bind("arrays", new Arrays);
-
+	
 	model_handle = constructor.GetModelHandle();
 
 	return true;
 }
 
 } // Anonymous namespace
+
 
 TEST_CASE("databinding")
 {
@@ -454,6 +416,9 @@ TEST_CASE("databinding")
 	ElementDocument* document = context->LoadDocumentFromMemory(document_rml);
 	REQUIRE(document);
 	document->Show();
+
+	context->Update();
+	context->Render();
 
 	TestsShell::RenderLoop();
 
@@ -473,6 +438,9 @@ TEST_CASE("databinding.inside_string")
 	REQUIRE(document);
 	document->Show();
 
+	context->Update();
+	context->Render();
+
 	TestsShell::RenderLoop();
 
 	CHECK(document->QuerySelector("p:nth-child(4)")->GetInnerRML() == "before i{{test}}23 test");
@@ -480,76 +448,5 @@ TEST_CASE("databinding.inside_string")
 
 	document->Close();
 
-	TestsShell::ShutdownShell();
-}
-TEST_CASE("databinding.aliasing")
-{
-	Context* context = TestsShell::GetContext();
-	REQUIRE(context);
-
-	REQUIRE(InitializeDataBindings(context));
-
-	ElementDocument* document = context->LoadDocumentFromMemory(aliasing_rml);
-	REQUIRE(document);
-	document->Show();
-
-	TestsShell::RenderLoop();
-
-	CHECK(document->QuerySelector("p:nth-child(1)")->GetInnerRML() == document->QuerySelector("p:nth-child(2)")->GetInnerRML());
-	CHECK(document->QuerySelector("#w1 .title")->GetInnerRML() == "s0");
-	CHECK(document->QuerySelector("#w1 .icon")->GetAttribute("icon", String()) == "a");
-	CHECK(document->QuerySelector("#w2 .title")->GetInnerRML() == "s1");
-	CHECK(document->QuerySelector("#w2 .icon")->GetAttribute("icon", String()) == "b");
-
-	document->Close();
-
-	TestsShell::ShutdownShell();
-}
-
-static const String set_enum_rml = R"(
-<rml>
-<head>
-	<title>Test</title>
-	<link type="text/template" href="/assets/window.rml"/>
-	<style>
-		body.window {
-			width: 500px;
-			height: 400px;
-		}
-	</style>
-</head>
-<body template="window">
-<div data-model="basics">
-<p id="simple" data-event-click="simple = 2">{{ simple }}</p>
-</div>
-</body>
-</rml>
-)";
-
-TEST_CASE("databinding.set_enum")
-{
-	Context* context = TestsShell::GetContext();
-	REQUIRE(context);
-
-	globals.simple = Simple_One;
-
-	REQUIRE(InitializeDataBindings(context));
-
-	ElementDocument* document = context->LoadDocumentFromMemory(set_enum_rml);
-	REQUIRE(document);
-	document->Show();
-
-	TestsShell::RenderLoop();
-
-	Element* element = document->GetElementById("simple");
-	CHECK(element->GetInnerRML() == "1");
-
-	element->DispatchEvent(EventId::Click, Dictionary());
-	TestsShell::RenderLoop();
-
-	CHECK(globals.simple == Simple_Two);
-	CHECK(element->GetInnerRML() == "2");
-
-	document->Close();
 	TestsShell::ShutdownShell();
 }

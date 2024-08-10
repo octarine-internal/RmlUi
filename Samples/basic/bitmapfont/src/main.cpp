@@ -4,7 +4,7 @@
  * For the latest information, see http://github.com/mikke89/RmlUi
  *
  * Copyright (c) 2008-2010 CodePoint Ltd, Shift Technology Ltd
- * Copyright (c) 2019-2023 The RmlUi Team, and contributors
+ * Copyright (c) 2019 The RmlUi Team, and contributors
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -15,7 +15,7 @@
  *
  * The above copyright notice and this permission notice shall be included in
  * all copies or substantial portions of the Software.
- *
+ * 
  * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
  * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
  * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -26,20 +26,31 @@
  *
  */
 
-#include "FontEngineInterfaceBitmap.h"
 #include <RmlUi/Core.h>
 #include <RmlUi/Debugger.h>
-#include <RmlUi_Backend.h>
 #include <Shell.h>
+
+#include "FontEngineInterfaceBitmap.h"
 
 /*
 
-    This demo shows how to create a custom bitmap font engine implementation.
-
-    It should work even when RmlUi is compiled without the default font engine (see CMake flag 'NO_FONT_INTERFACE_DEFAULT').
-    See the interface in 'FontEngineInterfaceBitmap.h' and the implementation in 'FontEngineBitmap.h'.
+	This demo shows how to create a custom bitmap font engine implementation. 
+	
+	It should work even when RmlUi is compiled without the default font engine (see CMake flag 'NO_FONT_INTERFACE_DEFAULT').
+	See the interface in 'FontEngineInterfaceBitmap.h' and the implementation in 'FontEngineBitmap.h'.
 
 */
+
+Rml::Context* context = nullptr;
+
+void GameLoop()
+{
+	context->Update();
+
+	Shell::BeginFrame();
+	context->Render();
+	Shell::PresentFrame();
+}
 
 #if defined RMLUI_PLATFORM_WIN32
 	#include <RmlUi_Include_Windows.h>
@@ -48,23 +59,15 @@ int APIENTRY WinMain(HINSTANCE /*instance_handle*/, HINSTANCE /*previous_instanc
 int main(int /*argc*/, char** /*argv*/)
 #endif
 {
-	int window_width = 1024;
-	int window_height = 768;
+    int window_width = 1024;
+    int window_height = 768;
 
-	// Initializes the shell which provides common functionality used by the included samples.
-	if (!Shell::Initialize())
-		return -1;
-
-	// Constructs the system and render interfaces, creates a window, and attaches the renderer.
-	if (!Backend::Initialize("Bitmap Font Sample", window_width, window_height, true))
+	// Initializes and sets the system and render interfaces, creates a window, and attaches the renderer.
+	if (!Shell::Initialize() || !Shell::OpenWindow("Bitmap Font Sample", window_width, window_height, true))
 	{
 		Shell::Shutdown();
 		return -1;
 	}
-
-	// Install the custom interfaces constructed by the backend before initializing RmlUi.
-	Rml::SetSystemInterface(Backend::GetSystemInterface());
-	Rml::SetRenderInterface(Backend::GetRenderInterface());
 
 	// Construct and load the font interface.
 	auto font_interface = Rml::MakeUnique<FontEngineInterfaceBitmap>();
@@ -74,28 +77,27 @@ int main(int /*argc*/, char** /*argv*/)
 	Rml::Initialise();
 
 	// Create the main RmlUi context.
-	Rml::Context* context = Rml::CreateContext("main", Rml::Vector2i(window_width, window_height));
+	context = Rml::CreateContext("main", Rml::Vector2i(window_width, window_height));
 	if (!context)
 	{
 		Rml::Shutdown();
-		Backend::Shutdown();
 		Shell::Shutdown();
 		return -1;
 	}
 
 	Rml::Debugger::Initialise(context);
+	Shell::SetContext(context);
 
-	// Load bitmap font
+    // Load bitmap font
 	if (!Rml::LoadFontFace("basic/bitmapfont/data/Comfortaa_Regular_22.fnt"))
 	{
 		Rml::Shutdown();
-		Backend::Shutdown();
 		Shell::Shutdown();
 		return -1;
 	}
 
 	// Load and show the demo document.
-	if (Rml::ElementDocument* document = context->LoadDocument("basic/bitmapfont/data/bitmapfont.rml"))
+	if (Rml::ElementDocument * document = context->LoadDocument("basic/bitmapfont/data/bitmapfont.rml"))
 	{
 		if (auto el = document->GetElementById("title"))
 			el->SetInnerRML("Bitmap font");
@@ -103,17 +105,7 @@ int main(int /*argc*/, char** /*argv*/)
 		document->Show();
 	}
 
-	bool running = true;
-	while (running)
-	{
-		running = Backend::ProcessEvents(context, &Shell::ProcessKeyDownShortcuts, true);
-
-		context->Update();
-
-		Backend::BeginFrame();
-		context->Render();
-		Backend::PresentFrame();
-	}
+	Shell::EventLoop(GameLoop);
 
 	// Shutdown RmlUi.
 	Rml::Shutdown();
@@ -121,7 +113,7 @@ int main(int /*argc*/, char** /*argv*/)
 	// Destroy the font interface before taking down the shell, this way font textures are properly released through the render interface.
 	font_interface.reset();
 
-	Backend::Shutdown();
+	Shell::CloseWindow();
 	Shell::Shutdown();
 
 	return 0;

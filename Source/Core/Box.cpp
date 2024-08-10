@@ -4,7 +4,7 @@
  * For the latest information, see http://github.com/mikke89/RmlUi
  *
  * Copyright (c) 2008-2010 CodePoint Ltd, Shift Technology Ltd
- * Copyright (c) 2019-2023 The RmlUi Team, and contributors
+ * Copyright (c) 2019 The RmlUi Team, and contributors
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -15,7 +15,7 @@
  *
  * The above copyright notice and this permission notice shall be included in
  * all copies or substantial portions of the Software.
- *
+ * 
  * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
  * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
  * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -27,15 +27,28 @@
  */
 
 #include "../../Include/RmlUi/Core/Box.h"
+#include "../../Include/RmlUi/Core/DecorationTypes.h"
 #include <string.h>
 
 namespace Rml {
 
-Box::Box() {}
-Box::Box(Vector2f content) : content(content) {}
+// Initialises a zero-sized box.
+Box::Box() : content(0, 0)
+{
+	memset(area_edges, 0, sizeof(area_edges));
+}
 
-Box::~Box() {}
+// Initialises a box with a default content area and no padding, borders and margins.
+Box::Box(Vector2f content) : content(content)
+{
+	memset(area_edges, 0, sizeof(area_edges));
+}
 
+Box::~Box()
+{
+}
+
+// Returns the top-left position of one of the areas.
 Vector2f Box::GetPosition(BoxArea area) const
 {
 	RMLUI_ASSERT(area != BoxArea::Auto);
@@ -67,23 +80,27 @@ Vector2f Box::GetSize(BoxArea area) const
 	return area_size;
 }
 
+// Sets the size of the content area.
 void Box::SetContent(Vector2f _content)
 {
 	content = _content;
 }
 
+// Sets the size of one of the segments of one of the box's outer areas.
 void Box::SetEdge(BoxArea area, BoxEdge edge, float size)
 {
 	RMLUI_ASSERT(area != BoxArea::Auto);
 	area_edges[(int)area][(int)edge] = size;
 }
 
+// Returns the size of one of the area segments.
 float Box::GetEdge(BoxArea area, BoxEdge edge) const
 {
 	RMLUI_ASSERT(area != BoxArea::Auto);
 	return area_edges[(int)area][(int)edge];
 }
 
+// Returns the cumulative size of one edge up to one of the box's areas.
 float Box::GetCumulativeEdge(BoxArea area, BoxEdge edge) const
 {
 	RMLUI_ASSERT(area != BoxArea::Auto);
@@ -95,38 +112,29 @@ float Box::GetCumulativeEdge(BoxArea area, BoxEdge edge) const
 	return size;
 }
 
-float Box::GetSizeAcross(BoxDirection direction, BoxArea area_outer, BoxArea area_inner) const
+float Box::GetSizeAcross(BoxDirection direction, BoxArea area, BoxArea area_end) const
 {
 	static_assert((int)BoxDirection::Horizontal == 1 && (int)BoxDirection::Vertical == 0, "");
-	RMLUI_ASSERT((int)area_outer <= (int)area_inner && (int)direction <= 1 && area_inner != BoxArea::Auto);
+	RMLUI_ASSERT((int)area <= (int)area_end && (int)direction <= 1 && area_end != BoxArea::Auto);
 
 	float size = 0.0f;
 
-	if (area_inner == BoxArea::Content)
+	if (area_end == BoxArea::Content)
 		size = (direction == BoxDirection::Horizontal ? content.x : content.y);
-
-	for (int i = (int)area_outer; i <= (int)area_inner && i < (int)BoxArea::Content; i++)
+	
+	for (int i = (int)area; i <= (int)area_end && i < (int)BoxArea::Content; i++)
 		size += (area_edges[i][(int)BoxEdge::Top + (int)direction] + area_edges[i][(int)BoxEdge::Bottom + (int)direction]);
 
 	return size;
 }
 
-Vector2f Box::GetFrameSize(BoxArea area) const
-{
-	if (area == BoxArea::Content)
-		return content;
-
-	return {
-		area_edges[(int)area][(int)BoxEdge::Right] + area_edges[(int)area][(int)BoxEdge::Left],
-		area_edges[(int)area][(int)BoxEdge::Top] + area_edges[(int)area][(int)BoxEdge::Bottom],
-	};
-}
-
+// Compares the size of the content area and the other area edges.
 bool Box::operator==(const Box& rhs) const
 {
 	return content == rhs.content && memcmp(area_edges, rhs.area_edges, sizeof(area_edges)) == 0;
 }
 
+// Compares the size of the content area and the other area edges.
 bool Box::operator!=(const Box& rhs) const
 {
 	return !(*this == rhs);

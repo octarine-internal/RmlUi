@@ -4,7 +4,7 @@
  * For the latest information, see http://github.com/mikke89/RmlUi
  *
  * Copyright (c) 2008-2010 CodePoint Ltd, Shift Technology Ltd
- * Copyright (c) 2019-2023 The RmlUi Team, and contributors
+ * Copyright (c) 2019 The RmlUi Team, and contributors
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -26,12 +26,14 @@
  *
  */
 
-#include "RmlUi/Core/Debug.h"
 #include "RmlUi_Backend.h"
 #include "RmlUi_Include_Xlib.h"
 #include "RmlUi_Platform_X11.h"
 #include "RmlUi_Renderer_GL2.h"
 #include <RmlUi/Core/Context.h>
+#include <RmlUi/Core/Core.h>
+#include <RmlUi/Core/ElementDocument.h>
+#include <RmlUi/Debugger.h>
 #include <GL/gl.h>
 #include <GL/glext.h>
 #include <GL/glu.h>
@@ -39,7 +41,6 @@
 #include <X11/Xlib.h>
 #include <X11/cursorfont.h>
 #include <X11/extensions/xf86vmode.h>
-#include <cmath>
 #include <limits.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -50,10 +51,39 @@
 #include <time.h>
 #include <unistd.h>
 
-// Attach the OpenGL context to the window.
-static bool AttachToNative(GLXContext& out_gl_context, Display* display, Window window, XVisualInfo* visual_info)
+namespace {
+
+Rml::UniquePtr<RenderInterface_GL2> render_interface;
+Rml::UniquePtr<SystemInterface_X11> system_interface;
+
+Display* display = nullptr;
+Window window = 0;
+GLXContext gl_context = nullptr;
+
+int window_width = 0;
+int window_height = 0;
+
+bool running = false;
+
+Rml::Context* context = nullptr;
+
+} // namespace
+
+static void UpdateWindowDimensions(int width = 0, int height = 0)
 {
-	GLXContext gl_context = glXCreateContext(display, visual_info, nullptr, GL_TRUE);
+	if (width > 0)
+		window_width = width;
+	if (height > 0)
+		window_height = height;
+	if (context)
+		context->SetDimensions(Rml::Vector2i(window_width, window_height));
+	
+	RmlGL2::SetViewport(window_width, window_height);
+}
+
+static bool AttachToNative(XVisualInfo* visual_info)
+{
+	gl_context = glXCreateContext(display, visual_info, nullptr, GL_TRUE);
 	if (!gl_context)
 		return false;
 
@@ -61,9 +91,7 @@ static bool AttachToNative(GLXContext& out_gl_context, Display* display, Window 
 		return false;
 
 	if (!glXIsDirect(display, gl_context))
-		puts("OpenGL context does not support direct rendering; performance is likely to be poor.");
-
-	out_gl_context = gl_context;
+		RmlX11::DisplayError("OpenGL context does not support direct rendering; performance is likely to be poor.");
 
 	Window root_window;
 	int x, y;
@@ -71,42 +99,49 @@ static bool AttachToNative(GLXContext& out_gl_context, Display* display, Window 
 	unsigned int border_width, depth;
 	XGetGeometry(display, window, &root_window, &x, &y, &width, &height, &border_width, &depth);
 
+	RmlGL2::Initialize();
+
 	return true;
 }
 
-// Shutdown the OpenGL context.
-static void DetachFromNative(GLXContext gl_context, Display* display)
+static void DetachFromNative()
 {
+	// Shutdown OpenGL
 	glXMakeCurrent(display, 0L, nullptr);
 	glXDestroyContext(display, gl_context);
+	gl_context = nullptr;
 }
 
-/**
-    Global data used by this backend.
-
-    Lifetime governed by the calls to Backend::Initialize() and Backend::Shutdown().
- */
-struct BackendData {
-	BackendData(Display* display) : system_interface(display) {}
-
-	SystemInterface_X11 system_interface;
-	RenderInterface_GL2 render_interface;
-
-	Display* display = nullptr;
-	Window window = 0;
-	GLXContext gl_context = nullptr;
-
-	bool running = true;
-};
-static Rml::UniquePtr<BackendData> data;
-
-bool Backend::Initialize(const char* window_name, int width, int height, bool allow_resize)
+bool Backend::InitializeInterfaces()
 {
-	RMLUI_ASSERT(!data);
+	RMLUI_ASSERT(!system_interface && !render_interface);
 
-	Display* display = XOpenDisplay(0);
+	system_interface = Rml::MakeUnique<SystemInterface_X11>();
+	Rml::SetSystemInterface(system_interface.get());
+
+	render_interface = Rml::MakeUnique<RenderInterface_GL2>();
+	Rml::SetRenderInterface(render_interface.get());
+
+	return true;
+}
+void Backend::ShutdownInterfaces()
+{
+	render_interface.reset();
+	system_interface.reset();
+}
+
+bool Backend::OpenWindow(const char* name, int width, int height, bool allow_resize)
+{
+	display = XOpenDisplay(0);
 	if (!display)
 		return false;
+
+	window_width = width;
+	window_height = height;
+
+	// This initializes the keyboard to keycode mapping system of X11 itself. It must be done here after opening display as it needs to query the
+	// connected X server display for information about its install keymap abilities.
+	RmlX11::Initialize(display);
 
 	int screen = XDefaultScreen(display);
 
@@ -118,203 +153,120 @@ bool Backend::Initialize(const char* window_name, int width, int height, bool al
 	if (!visual_info)
 		return false;
 
-	// Build up our window attributes.
-	XSetWindowAttributes window_attributes;
-	window_attributes.colormap = XCreateColormap(display, RootWindow(display, visual_info->screen), visual_info->visual, AllocNone);
-	window_attributes.border_pixel = 0;
-	window_attributes.event_mask = ExposureMask | KeyPressMask | ButtonPressMask | StructureNotifyMask;
-
-	// Create the window.
-	Window window = XCreateWindow(display, RootWindow(display, visual_info->screen), 0, 0, width, height, 0, visual_info->depth, InputOutput,
-		visual_info->visual, CWBorderPixel | CWColormap | CWEventMask, &window_attributes);
-
-	// Handle delete events in windowed mode.
-	Atom delete_atom = XInternAtom(display, "WM_DELETE_WINDOW", True);
-	XSetWMProtocols(display, window, &delete_atom, 1);
-
-	// Capture the events we're interested in.
-	XSelectInput(display, window,
-		KeyPressMask | KeyReleaseMask | ButtonPressMask | ButtonReleaseMask | LeaveWindowMask | PointerMotionMask | StructureNotifyMask);
-
-	if (!allow_resize)
-	{
-		// Force the window to remain at the fixed size by asking the window manager nicely, it may choose to ignore us
-		XSizeHints* win_size_hints = XAllocSizeHints(); // Allocate a size hint structure
-		if (!win_size_hints)
-		{
-			fprintf(stderr, "XAllocSizeHints - out of memory\n");
-		}
-		else
-		{
-			// Initialize the structure and specify which hints will be providing
-			win_size_hints->flags = PSize | PMinSize | PMaxSize;
-
-			// Set the sizes we want the window manager to use
-			win_size_hints->base_width = width;
-			win_size_hints->base_height = height;
-			win_size_hints->min_width = width;
-			win_size_hints->min_height = height;
-			win_size_hints->max_width = width;
-			win_size_hints->max_height = height;
-
-			// Pass the size hints to the window manager.
-			XSetWMNormalHints(display, window, win_size_hints);
-
-			// Free the size buffer
-			XFree(win_size_hints);
-		}
-	}
-
-	// Set the window title and show the window.
-	XSetStandardProperties(display, window, window_name, "", 0L, nullptr, 0, nullptr);
-	XMapRaised(display, window);
-
-	GLXContext gl_context = {};
-	if (!AttachToNative(gl_context, display, window, visual_info))
+	if (!RmlX11::OpenWindow(name, width, height, allow_resize, display, visual_info, &window))
 		return false;
 
-	data = Rml::MakeUnique<BackendData>(display);
-
-	data->display = display;
-	data->window = window;
-	data->gl_context = gl_context;
-
-	data->system_interface.SetWindow(window);
-	data->render_interface.SetViewport(width, height);
-
-	return true;
-}
-
-void Backend::Shutdown()
-{
-	RMLUI_ASSERT(data);
-
-	DetachFromNative(data->gl_context, data->display);
-	XCloseDisplay(data->display);
-
-	data.reset();
-}
-
-Rml::SystemInterface* Backend::GetSystemInterface()
-{
-	RMLUI_ASSERT(data);
-	return &data->system_interface;
-}
-
-Rml::RenderInterface* Backend::GetRenderInterface()
-{
-	RMLUI_ASSERT(data);
-	return &data->render_interface;
-}
-
-bool Backend::ProcessEvents(Rml::Context* context, KeyDownCallback key_down_callback, bool power_save)
-{
-	RMLUI_ASSERT(data && context);
-
-	Display* display = data->display;
-	bool result = data->running;
-	data->running = true;
-
-	if (power_save && XPending(display) == 0)
-	{
-		int display_fd = ConnectionNumber(display);
-		fd_set fds{};
-		FD_ZERO(&fds);
-		FD_SET(display_fd, &fds);
-
-		double timeout = Rml::Math::Min(context->GetNextUpdateDelay(), 10.0);
-		struct timeval tv {};
-		double seconds;
-		tv.tv_usec = std::modf(timeout, &seconds) * 1000000.0;
-		tv.tv_sec = seconds;
-
-		int ready_fd_count;
-		do
-		{
-			ready_fd_count = select(display_fd + 1, &fds, NULL, NULL, &tv);
-			// We don't care about the return value as long as select didn't error out
-			RMLUI_ASSERT(ready_fd_count >= 0);
-		} while (XPending(display) == 0 && ready_fd_count != 0);
-	}
-
-	while (XPending(display) > 0)
-	{
-		XEvent ev;
-		XNextEvent(display, &ev);
-
-		switch (ev.type)
-		{
-		case ClientMessage:
-		{
-			// The only message we register for is WM_DELETE_WINDOW, so if we receive a client message then the window has been closed.
-			char* event_type = XGetAtomName(display, ev.xclient.message_type);
-			if (strcmp(event_type, "WM_PROTOCOLS") == 0)
-				data->running = false;
-			XFree(event_type);
-			event_type = nullptr;
-		}
-		break;
-		case ConfigureNotify:
-		{
-			int x = ev.xconfigure.width;
-			int y = ev.xconfigure.height;
-
-			context->SetDimensions({x, y});
-			data->render_interface.SetViewport(x, y);
-		}
-		break;
-		case KeyPress:
-		{
-			Rml::Input::KeyIdentifier key = RmlX11::ConvertKey(display, ev.xkey.keycode);
-			const int key_modifier = RmlX11::GetKeyModifierState(ev.xkey.state);
-			const float native_dp_ratio = 1.f;
-
-			// See if we have any global shortcuts that take priority over the context.
-			if (key_down_callback && !key_down_callback(context, key, key_modifier, native_dp_ratio, true))
-				break;
-			// Otherwise, hand the event over to the context by calling the input handler as normal.
-			if (!RmlX11::HandleInputEvent(context, display, ev))
-				break;
-			// The key was not consumed by the context either, try keyboard shortcuts of lower priority.
-			if (key_down_callback && !key_down_callback(context, key, key_modifier, native_dp_ratio, false))
-				break;
-		}
-		break;
-		case SelectionRequest:
-		{
-			data->system_interface.HandleSelectionRequest(ev);
-		}
-		break;
-		default:
-		{
-			// Pass unhandled events to the platform layer's input handler.
-			RmlX11::HandleInputEvent(context, display, ev);
-		}
-		break;
-		}
-	}
+	bool result = AttachToNative(visual_info);
 
 	return result;
 }
 
+void Backend::CloseWindow()
+{
+	DetachFromNative();
+	RmlX11::CloseWindow();
+}
+
+void Backend::SetContext(Rml::Context* new_context)
+{
+	context = new_context;
+	UpdateWindowDimensions();
+	RmlX11::SetContextForInput(context);
+}
+
+void Backend::EventLoop(ShellIdleFunction idle_function)
+{
+	running = true;
+
+	// Loop on Peek/GetMessage until and exit has been requested
+	while (running)
+	{
+		while (XPending(display) > 0)
+		{
+			XEvent event;
+			char* event_type = nullptr;
+			XNextEvent(display, &event);
+
+			switch (event.type)
+			{
+			case ClientMessage:
+			{
+				// The only message we register for is WM_DELETE_WINDOW, so if we receive a client message then the
+				// window has been closed.
+				event_type = XGetAtomName(display, event.xclient.message_type);
+				if (strcmp(event_type, "WM_PROTOCOLS") == 0)
+					running = false;
+				XFree(event_type);
+				event_type = nullptr;
+			}
+			break;
+			case ConfigureNotify:
+			{
+				int x = event.xconfigure.width;
+				int y = event.xconfigure.height;
+
+				UpdateWindowDimensions(x, y);
+			}
+			break;
+			case KeyPress:
+			{
+				Rml::Input::KeyIdentifier key_identifier = RmlX11::ConvertKey(event.xkey.keycode);
+				const int key_modifier_state = RmlX11::GetKeyModifierState(event.xkey.state);
+
+				// Check for special key combinations.
+				if (key_identifier == Rml::Input::KI_F8)
+				{
+					Rml::Debugger::SetVisible(!Rml::Debugger::IsVisible());
+				}
+				else
+				{
+					// No special shortcut, pass the key on to the context.
+					bool propagates = RmlX11::HandleWindowEvent(event);
+
+					// Check for low-priority key combinations that are only activated if not already consumed by the context.
+					if (propagates && key_identifier == Rml::Input::KI_R && key_modifier_state & Rml::Input::KM_CTRL)
+					{
+						for (int i = 0; i < context->GetNumDocuments(); i++)
+						{
+							Rml::ElementDocument* document = context->GetDocument(i);
+							const Rml::String& src = document->GetSourceURL();
+							if (src.size() > 4 && src.substr(src.size() - 4) == ".rml")
+							{
+								document->ReloadStyleSheet();
+							}
+						}
+					}
+				}
+			}
+			break;
+			default:
+			{
+				// Pass unhandled events to the platform layer.
+				RmlX11::HandleWindowEvent(event);
+			}
+			break;
+			}
+		}
+
+		idle_function();
+	}
+}
+
 void Backend::RequestExit()
 {
-	RMLUI_ASSERT(data);
-	data->running = false;
+	running = false;
 }
 
 void Backend::BeginFrame()
 {
-	RMLUI_ASSERT(data);
-	data->render_interface.BeginFrame();
-	data->render_interface.Clear();
+	RmlGL2::BeginFrame();
+	RmlGL2::Clear();
 }
 
 void Backend::PresentFrame()
 {
-	RMLUI_ASSERT(data);
-	data->render_interface.EndFrame();
+	RmlGL2::EndFrame();
 
 	// Flips the OpenGL buffers.
-	glXSwapBuffers(data->display, data->window);
+	glXSwapBuffers(display, window);
 }

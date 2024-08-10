@@ -10,8 +10,13 @@ set(Core_HDR_FILES
     ${PROJECT_SOURCE_DIR}/Source/Core/DataModel.h
     ${PROJECT_SOURCE_DIR}/Source/Core/DataView.h
     ${PROJECT_SOURCE_DIR}/Source/Core/DataViewDefault.h
+    ${PROJECT_SOURCE_DIR}/Source/Core/DecoratorBasicFilter.h
+    ${PROJECT_SOURCE_DIR}/Source/Core/DecoratorBlur.h
+    ${PROJECT_SOURCE_DIR}/Source/Core/DecoratorDropShadow.h
+    ${PROJECT_SOURCE_DIR}/Source/Core/DecoratorElementData.h
     ${PROJECT_SOURCE_DIR}/Source/Core/DecoratorGradient.h
     ${PROJECT_SOURCE_DIR}/Source/Core/DecoratorNinePatch.h
+    ${PROJECT_SOURCE_DIR}/Source/Core/DecoratorShader.h
     ${PROJECT_SOURCE_DIR}/Source/Core/DecoratorTiled.h
     ${PROJECT_SOURCE_DIR}/Source/Core/DecoratorTiledBox.h
     ${PROJECT_SOURCE_DIR}/Source/Core/DecoratorTiledBoxInstancer.h
@@ -44,6 +49,7 @@ set(Core_HDR_FILES
     ${PROJECT_SOURCE_DIR}/Source/Core/Elements/WidgetTextInputMultiLine.h
     ${PROJECT_SOURCE_DIR}/Source/Core/Elements/WidgetTextInputSingleLine.h
     ${PROJECT_SOURCE_DIR}/Source/Core/Elements/WidgetTextInputSingleLinePassword.h
+    ${PROJECT_SOURCE_DIR}/Source/Core/Elements/XMLNodeHandlerDataGrid.h
     ${PROJECT_SOURCE_DIR}/Source/Core/Elements/XMLNodeHandlerSelect.h
     ${PROJECT_SOURCE_DIR}/Source/Core/Elements/XMLNodeHandlerTabSet.h
     ${PROJECT_SOURCE_DIR}/Source/Core/Elements/XMLNodeHandlerTextArea.h
@@ -59,45 +65,49 @@ set(Core_HDR_FILES
     ${PROJECT_SOURCE_DIR}/Source/Core/GeometryBackgroundBorder.h
     ${PROJECT_SOURCE_DIR}/Source/Core/GeometryDatabase.h
     ${PROJECT_SOURCE_DIR}/Source/Core/IdNameMap.h
-    ${PROJECT_SOURCE_DIR}/Source/Core/Layout/BlockContainer.h
-    ${PROJECT_SOURCE_DIR}/Source/Core/Layout/BlockFormattingContext.h
-    ${PROJECT_SOURCE_DIR}/Source/Core/Layout/ContainerBox.h
-    ${PROJECT_SOURCE_DIR}/Source/Core/Layout/FlexFormattingContext.h
-    ${PROJECT_SOURCE_DIR}/Source/Core/Layout/FloatedBoxSpace.h
-    ${PROJECT_SOURCE_DIR}/Source/Core/Layout/FormattingContext.h
-    ${PROJECT_SOURCE_DIR}/Source/Core/Layout/InlineBox.h
-    ${PROJECT_SOURCE_DIR}/Source/Core/Layout/InlineContainer.h
-    ${PROJECT_SOURCE_DIR}/Source/Core/Layout/InlineLevelBox.h
-    ${PROJECT_SOURCE_DIR}/Source/Core/Layout/InlineTypes.h
-    ${PROJECT_SOURCE_DIR}/Source/Core/Layout/LayoutBox.h
-    ${PROJECT_SOURCE_DIR}/Source/Core/Layout/LayoutDetails.h
-    ${PROJECT_SOURCE_DIR}/Source/Core/Layout/LayoutEngine.h
-    ${PROJECT_SOURCE_DIR}/Source/Core/Layout/LayoutPools.h
-    ${PROJECT_SOURCE_DIR}/Source/Core/Layout/LineBox.h
-    ${PROJECT_SOURCE_DIR}/Source/Core/Layout/ReplacedFormattingContext.h
-    ${PROJECT_SOURCE_DIR}/Source/Core/Layout/TableFormattingContext.h
-    ${PROJECT_SOURCE_DIR}/Source/Core/Layout/TableFormattingDetails.h
+    ${PROJECT_SOURCE_DIR}/Source/Core/LayoutBlockBox.h
+    ${PROJECT_SOURCE_DIR}/Source/Core/LayoutBlockBoxSpace.h
+    ${PROJECT_SOURCE_DIR}/Source/Core/LayoutDetails.h
+    ${PROJECT_SOURCE_DIR}/Source/Core/LayoutEngine.h
+    ${PROJECT_SOURCE_DIR}/Source/Core/LayoutFlex.h
+    ${PROJECT_SOURCE_DIR}/Source/Core/LayoutInlineBox.h
+    ${PROJECT_SOURCE_DIR}/Source/Core/LayoutInlineBoxText.h
+    ${PROJECT_SOURCE_DIR}/Source/Core/LayoutLineBox.h
+    ${PROJECT_SOURCE_DIR}/Source/Core/LayoutTable.h
+    ${PROJECT_SOURCE_DIR}/Source/Core/LayoutTableDetails.h
     ${PROJECT_SOURCE_DIR}/Source/Core/Memory.h
     ${PROJECT_SOURCE_DIR}/Source/Core/PluginRegistry.h
     ${PROJECT_SOURCE_DIR}/Source/Core/Pool.h
     ${PROJECT_SOURCE_DIR}/Source/Core/precompiled.h
     ${PROJECT_SOURCE_DIR}/Source/Core/PropertiesIterator.h
     ${PROJECT_SOURCE_DIR}/Source/Core/PropertyParserAnimation.h
+    ${PROJECT_SOURCE_DIR}/Source/Core/PropertyParserColorStopList.h
     ${PROJECT_SOURCE_DIR}/Source/Core/PropertyParserColour.h
     ${PROJECT_SOURCE_DIR}/Source/Core/PropertyParserDecorator.h
     ${PROJECT_SOURCE_DIR}/Source/Core/PropertyParserFontEffect.h
     ${PROJECT_SOURCE_DIR}/Source/Core/PropertyParserKeyword.h
     ${PROJECT_SOURCE_DIR}/Source/Core/PropertyParserNumber.h
     ${PROJECT_SOURCE_DIR}/Source/Core/PropertyParserRatio.h
+    ${PROJECT_SOURCE_DIR}/Source/Core/PropertyParserShadow.h
     ${PROJECT_SOURCE_DIR}/Source/Core/PropertyParserString.h
     ${PROJECT_SOURCE_DIR}/Source/Core/PropertyParserTransform.h
     ${PROJECT_SOURCE_DIR}/Source/Core/PropertyShorthandDefinition.h
-    ${PROJECT_SOURCE_DIR}/Source/Core/ScrollController.h
     ${PROJECT_SOURCE_DIR}/Source/Core/StreamFile.h
     ${PROJECT_SOURCE_DIR}/Source/Core/StyleSheetFactory.h
     ${PROJECT_SOURCE_DIR}/Source/Core/StyleSheetNode.h
+    ${PROJECT_SOURCE_DIR}/Source/Core/StyleSheetNodeSelector.h
+    ${PROJECT_SOURCE_DIR}/Source/Core/StyleSheetNodeSelectorEmpty.h
+    ${PROJECT_SOURCE_DIR}/Source/Core/StyleSheetNodeSelectorFirstChild.h
+    ${PROJECT_SOURCE_DIR}/Source/Core/StyleSheetNodeSelectorFirstOfType.h
+    ${PROJECT_SOURCE_DIR}/Source/Core/StyleSheetNodeSelectorLastChild.h
+    ${PROJECT_SOURCE_DIR}/Source/Core/StyleSheetNodeSelectorLastOfType.h
+    ${PROJECT_SOURCE_DIR}/Source/Core/StyleSheetNodeSelectorNthChild.h
+    ${PROJECT_SOURCE_DIR}/Source/Core/StyleSheetNodeSelectorNthLastChild.h
+    ${PROJECT_SOURCE_DIR}/Source/Core/StyleSheetNodeSelectorNthLastOfType.h
+    ${PROJECT_SOURCE_DIR}/Source/Core/StyleSheetNodeSelectorNthOfType.h
+    ${PROJECT_SOURCE_DIR}/Source/Core/StyleSheetNodeSelectorOnlyChild.h
+    ${PROJECT_SOURCE_DIR}/Source/Core/StyleSheetNodeSelectorOnlyOfType.h
     ${PROJECT_SOURCE_DIR}/Source/Core/StyleSheetParser.h
-    ${PROJECT_SOURCE_DIR}/Source/Core/StyleSheetSelector.h
     ${PROJECT_SOURCE_DIR}/Source/Core/Template.h
     ${PROJECT_SOURCE_DIR}/Source/Core/TemplateCache.h
     ${PROJECT_SOURCE_DIR}/Source/Core/TextureDatabase.h
@@ -128,8 +138,8 @@ set(Core_PUB_HDR_FILES
     ${PROJECT_SOURCE_DIR}/Include/RmlUi/Core/Colour.h
     ${PROJECT_SOURCE_DIR}/Include/RmlUi/Core/Colour.inl
     ${PROJECT_SOURCE_DIR}/Include/RmlUi/Core/ComputedValues.h
-    ${PROJECT_SOURCE_DIR}/Include/RmlUi/Core/Containers/itlib/flat_map.hpp
-    ${PROJECT_SOURCE_DIR}/Include/RmlUi/Core/Containers/itlib/flat_set.hpp
+    ${PROJECT_SOURCE_DIR}/Include/RmlUi/Core/Containers/chobo/flat_map.hpp
+    ${PROJECT_SOURCE_DIR}/Include/RmlUi/Core/Containers/chobo/flat_set.hpp
     ${PROJECT_SOURCE_DIR}/Include/RmlUi/Core/Containers/robin_hood.h
     ${PROJECT_SOURCE_DIR}/Include/RmlUi/Core/Context.h
     ${PROJECT_SOURCE_DIR}/Include/RmlUi/Core/ContextInstancer.h
@@ -141,6 +151,7 @@ set(Core_PUB_HDR_FILES
     ${PROJECT_SOURCE_DIR}/Include/RmlUi/Core/DataTypes.h
     ${PROJECT_SOURCE_DIR}/Include/RmlUi/Core/DataVariable.h
     ${PROJECT_SOURCE_DIR}/Include/RmlUi/Core/Debug.h
+    ${PROJECT_SOURCE_DIR}/Include/RmlUi/Core/DecorationTypes.h
     ${PROJECT_SOURCE_DIR}/Include/RmlUi/Core/Decorator.h
     ${PROJECT_SOURCE_DIR}/Include/RmlUi/Core/DecoratorInstancer.h
     ${PROJECT_SOURCE_DIR}/Include/RmlUi/Core/Dictionary.h
@@ -148,8 +159,17 @@ set(Core_PUB_HDR_FILES
     ${PROJECT_SOURCE_DIR}/Include/RmlUi/Core/Element.inl
     ${PROJECT_SOURCE_DIR}/Include/RmlUi/Core/ElementDocument.h
     ${PROJECT_SOURCE_DIR}/Include/RmlUi/Core/ElementInstancer.h
+    ${PROJECT_SOURCE_DIR}/Include/RmlUi/Core/Elements/DataFormatter.h
+    ${PROJECT_SOURCE_DIR}/Include/RmlUi/Core/Elements/DataQuery.h
+    ${PROJECT_SOURCE_DIR}/Include/RmlUi/Core/Elements/DataSource.h
+    ${PROJECT_SOURCE_DIR}/Include/RmlUi/Core/Elements/DataSourceListener.h
+    ${PROJECT_SOURCE_DIR}/Include/RmlUi/Core/Elements/ElementDataGrid.h
+    ${PROJECT_SOURCE_DIR}/Include/RmlUi/Core/Elements/ElementDataGridCell.h
+    ${PROJECT_SOURCE_DIR}/Include/RmlUi/Core/Elements/ElementDataGridExpandButton.h
+    ${PROJECT_SOURCE_DIR}/Include/RmlUi/Core/Elements/ElementDataGridRow.h
     ${PROJECT_SOURCE_DIR}/Include/RmlUi/Core/Elements/ElementForm.h
     ${PROJECT_SOURCE_DIR}/Include/RmlUi/Core/Elements/ElementFormControl.h
+    ${PROJECT_SOURCE_DIR}/Include/RmlUi/Core/Elements/ElementFormControlDataSelect.h
     ${PROJECT_SOURCE_DIR}/Include/RmlUi/Core/Elements/ElementFormControlInput.h
     ${PROJECT_SOURCE_DIR}/Include/RmlUi/Core/Elements/ElementFormControlSelect.h
     ${PROJECT_SOURCE_DIR}/Include/RmlUi/Core/Elements/ElementFormControlTextArea.h
@@ -168,7 +188,6 @@ set(Core_PUB_HDR_FILES
     ${PROJECT_SOURCE_DIR}/Include/RmlUi/Core/FontEffectInstancer.h
     ${PROJECT_SOURCE_DIR}/Include/RmlUi/Core/FontEngineInterface.h
     ${PROJECT_SOURCE_DIR}/Include/RmlUi/Core/FontGlyph.h
-    ${PROJECT_SOURCE_DIR}/Include/RmlUi/Core/FontMetrics.h
     ${PROJECT_SOURCE_DIR}/Include/RmlUi/Core/Geometry.h
     ${PROJECT_SOURCE_DIR}/Include/RmlUi/Core/GeometryUtilities.h
     ${PROJECT_SOURCE_DIR}/Include/RmlUi/Core/Header.h
@@ -192,8 +211,8 @@ set(Core_PUB_HDR_FILES
     ${PROJECT_SOURCE_DIR}/Include/RmlUi/Core/PropertySpecification.h
     ${PROJECT_SOURCE_DIR}/Include/RmlUi/Core/Rectangle.h
     ${PROJECT_SOURCE_DIR}/Include/RmlUi/Core/RenderInterface.h
+    ${PROJECT_SOURCE_DIR}/Include/RmlUi/Core/RenderState.h
     ${PROJECT_SOURCE_DIR}/Include/RmlUi/Core/ScriptInterface.h
-    ${PROJECT_SOURCE_DIR}/Include/RmlUi/Core/ScrollTypes.h
     ${PROJECT_SOURCE_DIR}/Include/RmlUi/Core/Spritesheet.h
     ${PROJECT_SOURCE_DIR}/Include/RmlUi/Core/Stream.h
     ${PROJECT_SOURCE_DIR}/Include/RmlUi/Core/StreamMemory.h
@@ -205,7 +224,6 @@ set(Core_PUB_HDR_FILES
     ${PROJECT_SOURCE_DIR}/Include/RmlUi/Core/StyleTypes.h
     ${PROJECT_SOURCE_DIR}/Include/RmlUi/Core/SystemInterface.h
     ${PROJECT_SOURCE_DIR}/Include/RmlUi/Core/Texture.h
-    ${PROJECT_SOURCE_DIR}/Include/RmlUi/Core/TextShapingContext.h
     ${PROJECT_SOURCE_DIR}/Include/RmlUi/Core/Traits.h
     ${PROJECT_SOURCE_DIR}/Include/RmlUi/Core/Transform.h
     ${PROJECT_SOURCE_DIR}/Include/RmlUi/Core/TransformPrimitive.h
@@ -250,9 +268,14 @@ set(Core_SRC_FILES
     ${PROJECT_SOURCE_DIR}/Source/Core/DataView.cpp
     ${PROJECT_SOURCE_DIR}/Source/Core/DataViewDefault.cpp
     ${PROJECT_SOURCE_DIR}/Source/Core/Decorator.cpp
+    ${PROJECT_SOURCE_DIR}/Source/Core/DecoratorBasicFilter.cpp
+    ${PROJECT_SOURCE_DIR}/Source/Core/DecoratorBlur.cpp
+    ${PROJECT_SOURCE_DIR}/Source/Core/DecoratorDropShadow.cpp
+    ${PROJECT_SOURCE_DIR}/Source/Core/DecoratorElementData.cpp
     ${PROJECT_SOURCE_DIR}/Source/Core/DecoratorGradient.cpp
     ${PROJECT_SOURCE_DIR}/Source/Core/DecoratorInstancer.cpp
     ${PROJECT_SOURCE_DIR}/Source/Core/DecoratorNinePatch.cpp
+    ${PROJECT_SOURCE_DIR}/Source/Core/DecoratorShader.cpp
     ${PROJECT_SOURCE_DIR}/Source/Core/DecoratorTiled.cpp
     ${PROJECT_SOURCE_DIR}/Source/Core/DecoratorTiledBox.cpp
     ${PROJECT_SOURCE_DIR}/Source/Core/DecoratorTiledBoxInstancer.cpp
@@ -272,8 +295,17 @@ set(Core_SRC_FILES
     ${PROJECT_SOURCE_DIR}/Source/Core/ElementDocument.cpp
     ${PROJECT_SOURCE_DIR}/Source/Core/ElementHandle.cpp
     ${PROJECT_SOURCE_DIR}/Source/Core/ElementInstancer.cpp
+    ${PROJECT_SOURCE_DIR}/Source/Core/Elements/DataFormatter.cpp
+    ${PROJECT_SOURCE_DIR}/Source/Core/Elements/DataQuery.cpp
+    ${PROJECT_SOURCE_DIR}/Source/Core/Elements/DataSource.cpp
+    ${PROJECT_SOURCE_DIR}/Source/Core/Elements/DataSourceListener.cpp
+    ${PROJECT_SOURCE_DIR}/Source/Core/Elements/ElementDataGrid.cpp
+    ${PROJECT_SOURCE_DIR}/Source/Core/Elements/ElementDataGridCell.cpp
+    ${PROJECT_SOURCE_DIR}/Source/Core/Elements/ElementDataGridExpandButton.cpp
+    ${PROJECT_SOURCE_DIR}/Source/Core/Elements/ElementDataGridRow.cpp
     ${PROJECT_SOURCE_DIR}/Source/Core/Elements/ElementForm.cpp
     ${PROJECT_SOURCE_DIR}/Source/Core/Elements/ElementFormControl.cpp
+    ${PROJECT_SOURCE_DIR}/Source/Core/Elements/ElementFormControlDataSelect.cpp
     ${PROJECT_SOURCE_DIR}/Source/Core/Elements/ElementFormControlInput.cpp
     ${PROJECT_SOURCE_DIR}/Source/Core/Elements/ElementFormControlSelect.cpp
     ${PROJECT_SOURCE_DIR}/Source/Core/Elements/ElementFormControlTextArea.cpp
@@ -295,6 +327,7 @@ set(Core_SRC_FILES
     ${PROJECT_SOURCE_DIR}/Source/Core/Elements/WidgetTextInputMultiLine.cpp
     ${PROJECT_SOURCE_DIR}/Source/Core/Elements/WidgetTextInputSingleLine.cpp
     ${PROJECT_SOURCE_DIR}/Source/Core/Elements/WidgetTextInputSingleLinePassword.cpp
+    ${PROJECT_SOURCE_DIR}/Source/Core/Elements/XMLNodeHandlerDataGrid.cpp
     ${PROJECT_SOURCE_DIR}/Source/Core/Elements/XMLNodeHandlerSelect.cpp
     ${PROJECT_SOURCE_DIR}/Source/Core/Elements/XMLNodeHandlerTabSet.cpp
     ${PROJECT_SOURCE_DIR}/Source/Core/Elements/XMLNodeHandlerTextArea.cpp
@@ -322,23 +355,16 @@ set(Core_SRC_FILES
     ${PROJECT_SOURCE_DIR}/Source/Core/GeometryBackgroundBorder.cpp
     ${PROJECT_SOURCE_DIR}/Source/Core/GeometryDatabase.cpp
     ${PROJECT_SOURCE_DIR}/Source/Core/GeometryUtilities.cpp
-    ${PROJECT_SOURCE_DIR}/Source/Core/Layout/BlockContainer.cpp
-    ${PROJECT_SOURCE_DIR}/Source/Core/Layout/BlockFormattingContext.cpp
-    ${PROJECT_SOURCE_DIR}/Source/Core/Layout/ContainerBox.cpp
-    ${PROJECT_SOURCE_DIR}/Source/Core/Layout/FlexFormattingContext.cpp
-    ${PROJECT_SOURCE_DIR}/Source/Core/Layout/FloatedBoxSpace.cpp
-    ${PROJECT_SOURCE_DIR}/Source/Core/Layout/FormattingContext.cpp
-    ${PROJECT_SOURCE_DIR}/Source/Core/Layout/InlineBox.cpp
-    ${PROJECT_SOURCE_DIR}/Source/Core/Layout/InlineContainer.cpp
-    ${PROJECT_SOURCE_DIR}/Source/Core/Layout/InlineLevelBox.cpp
-    ${PROJECT_SOURCE_DIR}/Source/Core/Layout/LayoutBox.cpp
-    ${PROJECT_SOURCE_DIR}/Source/Core/Layout/LayoutDetails.cpp
-    ${PROJECT_SOURCE_DIR}/Source/Core/Layout/LayoutEngine.cpp
-    ${PROJECT_SOURCE_DIR}/Source/Core/Layout/LayoutPools.cpp
-    ${PROJECT_SOURCE_DIR}/Source/Core/Layout/LineBox.cpp
-    ${PROJECT_SOURCE_DIR}/Source/Core/Layout/ReplacedFormattingContext.cpp
-    ${PROJECT_SOURCE_DIR}/Source/Core/Layout/TableFormattingContext.cpp
-    ${PROJECT_SOURCE_DIR}/Source/Core/Layout/TableFormattingDetails.cpp
+    ${PROJECT_SOURCE_DIR}/Source/Core/LayoutBlockBox.cpp
+    ${PROJECT_SOURCE_DIR}/Source/Core/LayoutBlockBoxSpace.cpp
+    ${PROJECT_SOURCE_DIR}/Source/Core/LayoutDetails.cpp
+    ${PROJECT_SOURCE_DIR}/Source/Core/LayoutEngine.cpp
+    ${PROJECT_SOURCE_DIR}/Source/Core/LayoutFlex.cpp
+    ${PROJECT_SOURCE_DIR}/Source/Core/LayoutInlineBox.cpp
+    ${PROJECT_SOURCE_DIR}/Source/Core/LayoutInlineBoxText.cpp
+    ${PROJECT_SOURCE_DIR}/Source/Core/LayoutLineBox.cpp
+    ${PROJECT_SOURCE_DIR}/Source/Core/LayoutTable.cpp
+    ${PROJECT_SOURCE_DIR}/Source/Core/LayoutTableDetails.cpp
     ${PROJECT_SOURCE_DIR}/Source/Core/Log.cpp
     ${PROJECT_SOURCE_DIR}/Source/Core/Math.cpp
     ${PROJECT_SOURCE_DIR}/Source/Core/Memory.cpp
@@ -351,17 +377,19 @@ set(Core_SRC_FILES
     ${PROJECT_SOURCE_DIR}/Source/Core/PropertyDefinition.cpp
     ${PROJECT_SOURCE_DIR}/Source/Core/PropertyDictionary.cpp
     ${PROJECT_SOURCE_DIR}/Source/Core/PropertyParserAnimation.cpp
+    ${PROJECT_SOURCE_DIR}/Source/Core/PropertyParserColorStopList.cpp
     ${PROJECT_SOURCE_DIR}/Source/Core/PropertyParserColour.cpp
     ${PROJECT_SOURCE_DIR}/Source/Core/PropertyParserDecorator.cpp
     ${PROJECT_SOURCE_DIR}/Source/Core/PropertyParserFontEffect.cpp
     ${PROJECT_SOURCE_DIR}/Source/Core/PropertyParserKeyword.cpp
     ${PROJECT_SOURCE_DIR}/Source/Core/PropertyParserNumber.cpp
     ${PROJECT_SOURCE_DIR}/Source/Core/PropertyParserRatio.cpp
+    ${PROJECT_SOURCE_DIR}/Source/Core/PropertyParserShadow.cpp
     ${PROJECT_SOURCE_DIR}/Source/Core/PropertyParserString.cpp
     ${PROJECT_SOURCE_DIR}/Source/Core/PropertyParserTransform.cpp
     ${PROJECT_SOURCE_DIR}/Source/Core/PropertySpecification.cpp
     ${PROJECT_SOURCE_DIR}/Source/Core/RenderInterface.cpp
-    ${PROJECT_SOURCE_DIR}/Source/Core/ScrollController.cpp
+    ${PROJECT_SOURCE_DIR}/Source/Core/RenderState.cpp
     ${PROJECT_SOURCE_DIR}/Source/Core/Spritesheet.cpp
     ${PROJECT_SOURCE_DIR}/Source/Core/Stream.cpp
     ${PROJECT_SOURCE_DIR}/Source/Core/StreamFile.cpp
@@ -371,8 +399,19 @@ set(Core_SRC_FILES
     ${PROJECT_SOURCE_DIR}/Source/Core/StyleSheetContainer.cpp
     ${PROJECT_SOURCE_DIR}/Source/Core/StyleSheetFactory.cpp
     ${PROJECT_SOURCE_DIR}/Source/Core/StyleSheetNode.cpp
+    ${PROJECT_SOURCE_DIR}/Source/Core/StyleSheetNodeSelector.cpp
+    ${PROJECT_SOURCE_DIR}/Source/Core/StyleSheetNodeSelectorEmpty.cpp
+    ${PROJECT_SOURCE_DIR}/Source/Core/StyleSheetNodeSelectorFirstChild.cpp
+    ${PROJECT_SOURCE_DIR}/Source/Core/StyleSheetNodeSelectorFirstOfType.cpp
+    ${PROJECT_SOURCE_DIR}/Source/Core/StyleSheetNodeSelectorLastChild.cpp
+    ${PROJECT_SOURCE_DIR}/Source/Core/StyleSheetNodeSelectorLastOfType.cpp
+    ${PROJECT_SOURCE_DIR}/Source/Core/StyleSheetNodeSelectorNthChild.cpp
+    ${PROJECT_SOURCE_DIR}/Source/Core/StyleSheetNodeSelectorNthLastChild.cpp
+    ${PROJECT_SOURCE_DIR}/Source/Core/StyleSheetNodeSelectorNthLastOfType.cpp
+    ${PROJECT_SOURCE_DIR}/Source/Core/StyleSheetNodeSelectorNthOfType.cpp
+    ${PROJECT_SOURCE_DIR}/Source/Core/StyleSheetNodeSelectorOnlyChild.cpp
+    ${PROJECT_SOURCE_DIR}/Source/Core/StyleSheetNodeSelectorOnlyOfType.cpp
     ${PROJECT_SOURCE_DIR}/Source/Core/StyleSheetParser.cpp
-    ${PROJECT_SOURCE_DIR}/Source/Core/StyleSheetSelector.cpp
     ${PROJECT_SOURCE_DIR}/Source/Core/StyleSheetSpecification.cpp
     ${PROJECT_SOURCE_DIR}/Source/Core/SystemInterface.cpp
     ${PROJECT_SOURCE_DIR}/Source/Core/Template.cpp
@@ -472,12 +511,19 @@ set(Lua_HDR_FILES
     ${PROJECT_SOURCE_DIR}/Source/Lua/ElementChildNodesProxy.h
     ${PROJECT_SOURCE_DIR}/Source/Lua/ElementInstancer.h
     ${PROJECT_SOURCE_DIR}/Source/Lua/Elements/As.h
+    ${PROJECT_SOURCE_DIR}/Source/Lua/Elements/DataFormatter.h
+    ${PROJECT_SOURCE_DIR}/Source/Lua/Elements/DataSource.h
+    ${PROJECT_SOURCE_DIR}/Source/Lua/Elements/ElementDataGrid.h
+    ${PROJECT_SOURCE_DIR}/Source/Lua/Elements/ElementDataGridRow.h
     ${PROJECT_SOURCE_DIR}/Source/Lua/Elements/ElementForm.h
     ${PROJECT_SOURCE_DIR}/Source/Lua/Elements/ElementFormControl.h
+    ${PROJECT_SOURCE_DIR}/Source/Lua/Elements/ElementFormControlDataSelect.h
     ${PROJECT_SOURCE_DIR}/Source/Lua/Elements/ElementFormControlInput.h
     ${PROJECT_SOURCE_DIR}/Source/Lua/Elements/ElementFormControlSelect.h
     ${PROJECT_SOURCE_DIR}/Source/Lua/Elements/ElementFormControlTextArea.h
     ${PROJECT_SOURCE_DIR}/Source/Lua/Elements/ElementTabSet.h
+    ${PROJECT_SOURCE_DIR}/Source/Lua/Elements/LuaDataFormatter.h
+    ${PROJECT_SOURCE_DIR}/Source/Lua/Elements/LuaDataSource.h
     ${PROJECT_SOURCE_DIR}/Source/Lua/Elements/SelectOptionsProxy.h
     ${PROJECT_SOURCE_DIR}/Source/Lua/ElementStyleProxy.h
     ${PROJECT_SOURCE_DIR}/Source/Lua/ElementText.h
@@ -518,12 +564,19 @@ set(Lua_SRC_FILES
     ${PROJECT_SOURCE_DIR}/Source/Lua/ElementAttributesProxy.cpp
     ${PROJECT_SOURCE_DIR}/Source/Lua/ElementChildNodesProxy.cpp
     ${PROJECT_SOURCE_DIR}/Source/Lua/ElementInstancer.cpp
+    ${PROJECT_SOURCE_DIR}/Source/Lua/Elements/DataFormatter.cpp
+    ${PROJECT_SOURCE_DIR}/Source/Lua/Elements/DataSource.cpp
+    ${PROJECT_SOURCE_DIR}/Source/Lua/Elements/ElementDataGrid.cpp
+    ${PROJECT_SOURCE_DIR}/Source/Lua/Elements/ElementDataGridRow.cpp
     ${PROJECT_SOURCE_DIR}/Source/Lua/Elements/ElementForm.cpp
     ${PROJECT_SOURCE_DIR}/Source/Lua/Elements/ElementFormControl.cpp
+    ${PROJECT_SOURCE_DIR}/Source/Lua/Elements/ElementFormControlDataSelect.cpp
     ${PROJECT_SOURCE_DIR}/Source/Lua/Elements/ElementFormControlInput.cpp
     ${PROJECT_SOURCE_DIR}/Source/Lua/Elements/ElementFormControlSelect.cpp
     ${PROJECT_SOURCE_DIR}/Source/Lua/Elements/ElementFormControlTextArea.cpp
     ${PROJECT_SOURCE_DIR}/Source/Lua/Elements/ElementTabSet.cpp
+    ${PROJECT_SOURCE_DIR}/Source/Lua/Elements/LuaDataFormatter.cpp
+    ${PROJECT_SOURCE_DIR}/Source/Lua/Elements/LuaDataSource.cpp
     ${PROJECT_SOURCE_DIR}/Source/Lua/Elements/SelectOptionsProxy.cpp
     ${PROJECT_SOURCE_DIR}/Source/Lua/ElementStyleProxy.cpp
     ${PROJECT_SOURCE_DIR}/Source/Lua/ElementText.cpp

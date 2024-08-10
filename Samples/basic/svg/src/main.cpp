@@ -4,7 +4,7 @@
  * For the latest information, see http://github.com/mikke89/RmlUi
  *
  * Copyright (c) 2008-2010 CodePoint Ltd, Shift Technology Ltd
- * Copyright (c) 2019-2023 The RmlUi Team, and contributors
+ * Copyright (c) 2019 The RmlUi Team, and contributors
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -28,8 +28,18 @@
 
 #include <RmlUi/Core.h>
 #include <RmlUi/Debugger.h>
-#include <RmlUi_Backend.h>
 #include <Shell.h>
+
+Rml::Context* context = nullptr;
+
+void GameLoop()
+{
+	context->Update();
+
+	Shell::BeginFrame();
+	context->Render();
+	Shell::PresentFrame();
+}
 
 #if defined RMLUI_PLATFORM_WIN32
 	#include <RmlUi_Include_Windows.h>
@@ -41,35 +51,28 @@ int main(int /*argc*/, char** /*argv*/)
 	int window_width = 1024;
 	int window_height = 768;
 
-	// Initializes the shell which provides common functionality used by the included samples.
-	if (!Shell::Initialize())
-		return -1;
-
-	// Constructs the system and render interfaces, creates a window, and attaches the renderer.
-	if (!Backend::Initialize("SVG sample", window_width, window_height, true))
+	// Initializes and sets the system and render interfaces, creates a window, and attaches the renderer.
+	if (!Shell::Initialize() || !Shell::OpenWindow("SVG sample", window_width, window_height, true))
 	{
 		Shell::Shutdown();
 		return -1;
 	}
 
-	// Install the custom interfaces constructed by the backend before initializing RmlUi.
-	Rml::SetSystemInterface(Backend::GetSystemInterface());
-	Rml::SetRenderInterface(Backend::GetRenderInterface());
-
 	// RmlUi initialisation.
 	Rml::Initialise();
 
-	// Create the main RmlUi context.
-	Rml::Context* context = Rml::CreateContext("main", Rml::Vector2i(window_width, window_height));
+	// Create the main RmlUi context and set it on the shell's input layer.
+	context = Rml::CreateContext("main", Rml::Vector2i(window_width, window_height));
 	if (context == nullptr)
 	{
 		Rml::Shutdown();
-		Backend::Shutdown();
 		Shell::Shutdown();
 		return -1;
 	}
 
 	Rml::Debugger::Initialise(context);
+	Shell::SetContext(context);
+
 	Shell::LoadFonts();
 
 	// Load and show the demo document.
@@ -79,22 +82,12 @@ int main(int /*argc*/, char** /*argv*/)
 		document->GetElementById("title")->SetInnerRML("SVG");
 	}
 
-	bool running = true;
-	while (running)
-	{
-		running = Backend::ProcessEvents(context, &Shell::ProcessKeyDownShortcuts, true);
-
-		context->Update();
-
-		Backend::BeginFrame();
-		context->Render();
-		Backend::PresentFrame();
-	}
+	Shell::EventLoop(GameLoop);
 
 	// Shutdown RmlUi.
 	Rml::Shutdown();
 
-	Backend::Shutdown();
+	Shell::CloseWindow();
 	Shell::Shutdown();
 
 	return 0;

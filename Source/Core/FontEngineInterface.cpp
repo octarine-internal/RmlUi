@@ -4,7 +4,7 @@
  * For the latest information, see http://github.com/mikke89/RmlUi
  *
  * Copyright (c) 2008-2010 CodePoint Ltd, Shift Technology Ltd
- * Copyright (c) 2019-2023 The RmlUi Team, and contributors
+ * Copyright (c) 2019 The RmlUi Team, and contributors
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -34,7 +34,7 @@ FontEngineInterface::FontEngineInterface() {}
 
 FontEngineInterface::~FontEngineInterface() {}
 
-bool FontEngineInterface::LoadFontFace(const String& /*file_path*/, bool /*fallback_face*/, Style::FontWeight /*weight*/)
+bool FontEngineInterface::LoadFontFace(const String& /*file_name*/, bool /*fallback_face*/, Style::FontWeight /*weight*/)
 {
 	return false;
 }
@@ -56,21 +56,38 @@ FontEffectsHandle FontEngineInterface::PrepareFontEffects(FontFaceHandle /*handl
 	return 0;
 }
 
-const FontMetrics& FontEngineInterface::GetFontMetrics(FontFaceHandle /*handle*/)
+int FontEngineInterface::GetSize(FontFaceHandle /*handle*/)
 {
-	static const FontMetrics metrics = {};
-	return metrics;
+	return 0;
 }
 
-int FontEngineInterface::GetStringWidth(FontFaceHandle /*handle*/, const String& /*string*/, const TextShapingContext& /*text_shaping_context*/,
-	Character /*prior_character*/)
+int FontEngineInterface::GetXHeight(FontFaceHandle /*handle*/)
+{
+	return 0;
+}
+
+int FontEngineInterface::GetLineHeight(FontFaceHandle /*handle*/)
+{
+	return 0;
+}
+
+int FontEngineInterface::GetBaseline(FontFaceHandle /*handle*/)
+{
+	return 0;
+}
+
+float FontEngineInterface::GetUnderline(FontFaceHandle /*handle*/, float& /*thickness*/)
+{
+	return 0;
+}
+
+int FontEngineInterface::GetStringWidth(FontFaceHandle /*handle*/, const String& /*string*/, Character /*prior_character*/)
 {
 	return 0;
 }
 
 int FontEngineInterface::GenerateString(FontFaceHandle /*face_handle*/, FontEffectsHandle /*font_effects_handle*/, const String& /*string*/,
-	const Vector2f& /*position*/, const Colourb& /*colour*/, float /*opacity*/, const TextShapingContext& /*text_shaping_context*/,
-	GeometryList& /*geometry*/)
+	const Vector2f& /*position*/, const Colourb& /*colour*/, float /*opacity*/, GeometryList& /*geometry*/)
 {
 	return 0;
 }

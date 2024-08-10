@@ -4,7 +4,7 @@
  * For the latest information, see http://github.com/mikke89/RmlUi
  *
  * Copyright (c) 2008-2010 CodePoint Ltd, Shift Technology Ltd
- * Copyright (c) 2019-2023 The RmlUi Team, and contributors
+ * Copyright (c) 2019 The RmlUi Team, and contributors
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -31,6 +31,7 @@
 #include <RmlUi/Core/Element.h>
 #include <RmlUi/Core/ElementDocument.h>
 #include <RmlUi/Core/Types.h>
+
 #include <doctest.h>
 #include <nanobench.h>
 
@@ -76,6 +77,7 @@ static String document_rml = R"(
 </body>
 </rml>
 )";
+
 
 TEST_CASE("backgrounds_and_borders")
 {
@@ -130,7 +132,7 @@ TEST_CASE("backgrounds_and_borders")
 		document->QuerySelectorAll(elements, "#" + id + " > div");
 		REQUIRE(!elements.empty());
 
-		bench.run(("Border " + id).c_str(), [&] {
+		bench.run("Border " + id, [&] {
 			for (auto& element : elements)
 				element->SetProperty(Rml::PropertyId::BorderLeftColor, Rml::Property(Colourb(), Unit::COLOUR));
 			context->Update();

@@ -4,7 +4,7 @@
  * For the latest information, see http://github.com/mikke89/RmlUi
  *
  * Copyright (c) 2008-2010 CodePoint Ltd, Shift Technology Ltd
- * Copyright (c) 2019-2023 The RmlUi Team, and contributors
+ * Copyright (c) 2019 The RmlUi Team, and contributors
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -68,32 +68,22 @@ String Style::ComputedValues::cursor() const
 	return String();
 }
 
-float Style::ComputedValues::letter_spacing() const
-{
-	if (inherited.has_letter_spacing)
-	{
-		if (auto p = element->GetProperty(PropertyId::LetterSpacing))
-			return element->ResolveLength(p->GetNumericValue());
-	}
-	return 0.f;
-}
-
-float ResolveValueOr(Style::LengthPercentageAuto length, float base_value, float default_value)
+float ResolveValue(Style::LengthPercentageAuto length, float base_value)
 {
 	if (length.type == Style::LengthPercentageAuto::Length)
 		return length.value;
-	else if (length.type == Style::LengthPercentageAuto::Percentage && base_value >= 0.f)
+	else if (length.type == Style::LengthPercentageAuto::Percentage)
 		return length.value * 0.01f * base_value;
-	return default_value;
+	return 0.0f;
 }
 
-float ResolveValueOr(Style::LengthPercentage length, float base_value, float default_value)
+float ResolveValue(Style::LengthPercentage length, float base_value)
 {
 	if (length.type == Style::LengthPercentage::Length)
 		return length.value;
-	else if (length.type == Style::LengthPercentage::Percentage && base_value >= 0.f)
+	else if (length.type == Style::LengthPercentage::Percentage)
 		return length.value * 0.01f * base_value;
-	return default_value;
+	return 0.0f;
 }
 
 } // namespace Rml

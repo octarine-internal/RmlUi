@@ -4,7 +4,7 @@
  * For the latest information, see http://github.com/mikke89/RmlUi
  *
  * Copyright (c) 2008-2010 CodePoint Ltd, Shift Technology Ltd
- * Copyright (c) 2019-2023 The RmlUi Team, and contributors
+ * Copyright (c) 2019 The RmlUi Team, and contributors
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -31,8 +31,10 @@
 #include "RmlUi_Renderer_GL3.h"
 #include <RmlUi/Core/Context.h>
 #include <RmlUi/Core/Core.h>
+#include <RmlUi/Core/ElementDocument.h>
 #include <RmlUi/Core/FileInterface.h>
-#include <RmlUi/Core/Profiling.h>
+#include <RmlUi/Core/StringUtilities.h>
+#include <RmlUi/Debugger/Debugger.h>
 #include <SDL.h>
 #include <SDL_image.h>
 
@@ -44,91 +46,113 @@
 	#endif
 #endif
 
-/**
-    Custom render interface example for the SDL/GL3 backend.
+class RenderInterface_GL3_SDL;
 
-    Overloads the OpenGL3 render interface to load textures through SDL_image's built-in texture loading functionality.
- */
+static SDL_Window* window = nullptr;
+static SDL_GLContext glcontext = nullptr;
+
+static Rml::Context* context = nullptr;
+static int window_width = 0;
+static int window_height = 0;
+static bool running = false;
+
+static Rml::UniquePtr<RenderInterface_GL3_SDL> render_interface;
+static Rml::UniquePtr<SystemInterface_SDL> system_interface;
+
+static void ProcessKeyDown(SDL_Event& event, Rml::Input::KeyIdentifier key_identifier, const int key_modifier_state);
+
 class RenderInterface_GL3_SDL : public RenderInterface_GL3 {
 public:
 	RenderInterface_GL3_SDL() {}
 
-	bool LoadTexture(Rml::TextureHandle& texture_handle, Rml::Vector2i& texture_dimensions, const Rml::String& source) override
-	{
-		Rml::FileInterface* file_interface = Rml::GetFileInterface();
-		Rml::FileHandle file_handle = file_interface->Open(source);
-		if (!file_handle)
-			return false;
-
-		file_interface->Seek(file_handle, 0, SEEK_END);
-		const size_t buffer_size = file_interface->Tell(file_handle);
-		file_interface->Seek(file_handle, 0, SEEK_SET);
-
-		using Rml::byte;
-		Rml::UniquePtr<byte[]> buffer(new byte[buffer_size]);
-		file_interface->Read(buffer.get(), buffer_size, file_handle);
-		file_interface->Close(file_handle);
-
-		const size_t i = source.rfind('.');
-		Rml::String extension = (i == Rml::String::npos ? Rml::String() : source.substr(i + 1));
-
-		SDL_Surface* surface = IMG_LoadTyped_RW(SDL_RWFromMem(buffer.get(), int(buffer_size)), 1, extension.c_str());
-
-		bool success = false;
-		if (surface)
-		{
-			texture_dimensions.x = surface->w;
-			texture_dimensions.y = surface->h;
-
-			if (surface->format->format != SDL_PIXELFORMAT_RGBA32)
-			{
-				SDL_SetSurfaceAlphaMod(surface, SDL_ALPHA_OPAQUE);
-				SDL_SetSurfaceBlendMode(surface, SDL_BLENDMODE_NONE);
-
-				SDL_Surface* new_surface = SDL_CreateRGBSurfaceWithFormat(0, surface->w, surface->h, 32, SDL_PIXELFORMAT_RGBA32);
-				if (!new_surface)
-					return false;
-
-				if (SDL_BlitSurface(surface, 0, new_surface, 0) != 0)
-					return false;
-
-				SDL_FreeSurface(surface);
-				surface = new_surface;
-			}
-
-			success = RenderInterface_GL3::GenerateTexture(texture_handle, (const Rml::byte*)surface->pixels, texture_dimensions);
-			SDL_FreeSurface(surface);
-		}
-
-		return success;
-	}
+	bool LoadTexture(Rml::TextureHandle& texture_handle, Rml::Vector2i& texture_dimensions, const Rml::String& source) override;
 };
 
-/**
-    Global data used by this backend.
-
-    Lifetime governed by the calls to Backend::Initialize() and Backend::Shutdown().
- */
-struct BackendData {
-	SystemInterface_SDL system_interface;
-	RenderInterface_GL3_SDL render_interface;
-
-	SDL_Window* window = nullptr;
-	SDL_GLContext glcontext = nullptr;
-
-	bool running = true;
-};
-static Rml::UniquePtr<BackendData> data;
-
-bool Backend::Initialize(const char* window_name, int width, int height, bool allow_resize)
+bool RenderInterface_GL3_SDL::LoadTexture(Rml::TextureHandle& texture_handle, Rml::Vector2i& texture_dimensions, const Rml::String& source)
 {
-	RMLUI_ASSERT(!data);
-
-	if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS | SDL_INIT_TIMER) != 0)
+	Rml::FileInterface* file_interface = Rml::GetFileInterface();
+	Rml::FileHandle file_handle = file_interface->Open(source);
+	if (!file_handle)
 		return false;
 
-	// Submit click events when focusing the window.
-	SDL_SetHint(SDL_HINT_MOUSE_FOCUS_CLICKTHROUGH, "1");
+	file_interface->Seek(file_handle, 0, SEEK_END);
+	const size_t buffer_size = file_interface->Tell(file_handle);
+	file_interface->Seek(file_handle, 0, SEEK_SET);
+
+	using Rml::byte;
+	Rml::UniquePtr<byte[]> buffer(new byte[buffer_size]);
+	file_interface->Read(buffer.get(), buffer_size, file_handle);
+	file_interface->Close(file_handle);
+
+	const size_t i = source.rfind('.');
+	Rml::String extension = (i == Rml::String::npos ? Rml::String() : source.substr(i + 1));
+
+	SDL_Surface* surface = IMG_LoadTyped_RW(SDL_RWFromMem(buffer.get(), int(buffer_size)), 1, extension.c_str());
+
+	bool success = false;
+	if (surface)
+	{
+		texture_dimensions.x = surface->w;
+		texture_dimensions.y = surface->h;
+
+		if (surface->format->format != SDL_PIXELFORMAT_RGBA32)
+		{
+			SDL_SetSurfaceAlphaMod(surface, SDL_ALPHA_OPAQUE);
+			SDL_SetSurfaceBlendMode(surface, SDL_BLENDMODE_NONE);
+
+			SDL_Surface* new_surface = SDL_CreateRGBSurfaceWithFormat(0, surface->w, surface->h, 32, SDL_PIXELFORMAT_RGBA32);
+			if (!new_surface)
+				return false;
+
+			if (SDL_BlitSurface(surface, 0, new_surface, 0) != 0)
+				return false;
+
+			SDL_FreeSurface(surface);
+			surface = new_surface;
+		}
+
+		success = RenderInterface_GL3::GenerateTexture(texture_handle, (const Rml::byte*)surface->pixels, texture_dimensions);
+		SDL_FreeSurface(surface);
+	}
+
+	return success;
+}
+
+static void UpdateWindowDimensions(int width = 0, int height = 0)
+{
+	if (width > 0)
+		window_width = width;
+	if (height > 0)
+		window_height = height;
+	if (context)
+		context->SetDimensions(Rml::Vector2i(window_width, window_height));
+
+	RmlGL3::SetViewport(window_width, window_height);
+}
+
+bool Backend::InitializeInterfaces()
+{
+	RMLUI_ASSERT(!system_interface && !render_interface);
+
+	system_interface = Rml::MakeUnique<SystemInterface_SDL>();
+	Rml::SetSystemInterface(system_interface.get());
+
+	render_interface = Rml::MakeUnique<RenderInterface_GL3_SDL>();
+	Rml::SetRenderInterface(render_interface.get());
+
+	return true;
+}
+
+void Backend::ShutdownInterfaces()
+{
+	render_interface.reset();
+	system_interface.reset();
+}
+
+bool Backend::OpenWindow(const char* name, int width, int height, bool allow_resize)
+{
+	if (!RmlSDL::Initialize())
+		return false;
 
 #if defined RMLUI_PLATFORM_EMSCRIPTEN
 	// GLES 3.0 (WebGL 2.0)
@@ -144,33 +168,17 @@ bool Backend::Initialize(const char* window_name, int width, int height, bool al
 	SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
 #endif
 
-	// Request stencil buffer of at least 8-bit size to supporting clipping on transformed elements.
-	SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 8);
-	SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
+	// As opposed to the GL2 renderer we don't need to specify any GL window attributes, because here we use our own frame buffers for rendering.
 
-	// Enable linear filtering and MSAA for better-looking visuals, especially when transforms are applied.
-	SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "linear");
-	SDL_GL_SetAttribute(SDL_GL_MULTISAMPLEBUFFERS, 1);
-	SDL_GL_SetAttribute(SDL_GL_MULTISAMPLESAMPLES, 2);
-
-	const Uint32 window_flags = (SDL_WINDOW_OPENGL | (allow_resize ? SDL_WINDOW_RESIZABLE : 0));
-
-	SDL_Window* window = SDL_CreateWindow(window_name, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, width, height, window_flags);
-	if (!window)
+	const Uint32 window_flags = SDL_WINDOW_OPENGL;
+	window = nullptr;
+	if (!RmlSDL::CreateWindow(name, width, height, allow_resize, window_flags, window))
 	{
-		// Try again on low-quality settings.
-		SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "nearest");
-		SDL_GL_SetAttribute(SDL_GL_MULTISAMPLEBUFFERS, 0);
-		SDL_GL_SetAttribute(SDL_GL_MULTISAMPLESAMPLES, 0);
-		window = SDL_CreateWindow(window_name, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, width, height, window_flags);
-		if (!window)
-		{
-			fprintf(stderr, "SDL error on create window: %s\n", SDL_GetError());
-			return false;
-		}
+		fprintf(stderr, "SDL error on create window: %s\n", SDL_GetError());
+		return false;
 	}
 
-	SDL_GLContext glcontext = SDL_GL_CreateContext(window);
+	glcontext = SDL_GL_CreateContext(window);
 	SDL_GL_MakeCurrent(window, glcontext);
 	SDL_GL_SetSwapInterval(1);
 
@@ -180,149 +188,144 @@ bool Backend::Initialize(const char* window_name, int width, int height, bool al
 		return false;
 	}
 
-	data = Rml::MakeUnique<BackendData>();
-
-	if (!data->render_interface)
-	{
-		data.reset();
-		fprintf(stderr, "Could not initialize OpenGL3 render interface.");
-		return false;
-	}
-
-	data->window = window;
-	data->glcontext = glcontext;
-
-	data->system_interface.SetWindow(window);
-	data->render_interface.SetViewport(width, height);
+	UpdateWindowDimensions(width, height);
 
 	return true;
 }
 
-void Backend::Shutdown()
+void Backend::CloseWindow()
 {
-	RMLUI_ASSERT(data);
+	RmlGL3::Shutdown();
 
-	SDL_GL_DeleteContext(data->glcontext);
-	SDL_DestroyWindow(data->window);
+	SDL_GL_DeleteContext(glcontext);
 
-	data.reset();
+	glcontext = nullptr;
 
-	SDL_Quit();
+	RmlSDL::CloseWindow();
+	RmlSDL::Shutdown();
 }
 
-Rml::SystemInterface* Backend::GetSystemInterface()
+static void EventLoopIteration(void* idle_function_ptr)
 {
-	RMLUI_ASSERT(data);
-	return &data->system_interface;
+	ShellIdleFunction idle_function = (ShellIdleFunction)idle_function_ptr;
+	SDL_Event event;
+
+	while (SDL_PollEvent(&event))
+	{
+		switch (event.type)
+		{
+		case SDL_QUIT:
+			running = false;
+			break;
+		case SDL_KEYDOWN:
+			// Intercept keydown events to handle global sample shortcuts.
+			ProcessKeyDown(event, RmlSDL::ConvertKey(event.key.keysym.sym), RmlSDL::GetKeyModifierState());
+			break;
+		case SDL_WINDOWEVENT:
+			switch (event.window.event)
+			{
+			case SDL_WINDOWEVENT_SIZE_CHANGED:
+				UpdateWindowDimensions(event.window.data1, event.window.data2);
+				break;
+			}
+			break;
+		default:
+			RmlSDL::EventHandler(event);
+			break;
+		}
+	}
+
+	idle_function();
 }
 
-Rml::RenderInterface* Backend::GetRenderInterface()
+void Backend::EventLoop(ShellIdleFunction idle_function)
 {
-	RMLUI_ASSERT(data);
-	return &data->render_interface;
-}
-
-bool Backend::ProcessEvents(Rml::Context* context, KeyDownCallback key_down_callback, bool power_save)
-{
-	RMLUI_ASSERT(data && context);
+	running = true;
 
 #if defined RMLUI_PLATFORM_EMSCRIPTEN
 
-	// Ideally we would hand over control of the main loop to emscripten:
-	//
-	//  // Hand over control of the main loop to the WebAssembly runtime.
-	//  emscripten_set_main_loop_arg(EventLoopIteration, (void*)user_data_handle, 0, true);
-	//
-	// The above is the recommended approach. However, as we don't control the main loop here we have to make due with another approach. Instead, use
-	// Asyncify to yield by sleeping.
-	// Important: Must be linked with option -sASYNCIFY
-	emscripten_sleep(1);
+	// Hand over control of the main loop to the WebAssembly runtime.
+	emscripten_set_main_loop_arg(EventLoopIteration, (void*)idle_function, 0, true);
+
+#else
+
+	while (running)
+		EventLoopIteration((void*)idle_function);
 
 #endif
-
-	bool result = data->running;
-	data->running = true;
-
-	SDL_Event ev;
-	int has_event = 0;
-	if (power_save)
-		has_event = SDL_WaitEventTimeout(&ev, static_cast<int>(Rml::Math::Min(context->GetNextUpdateDelay(), 10.0) * 1000));
-	else
-		has_event = SDL_PollEvent(&ev);
-	while (has_event)
-	{
-		switch (ev.type)
-		{
-		case SDL_QUIT:
-		{
-			result = false;
-		}
-		break;
-		case SDL_KEYDOWN:
-		{
-			const Rml::Input::KeyIdentifier key = RmlSDL::ConvertKey(ev.key.keysym.sym);
-			const int key_modifier = RmlSDL::GetKeyModifierState();
-			const float native_dp_ratio = 1.f;
-
-			// See if we have any global shortcuts that take priority over the context.
-			if (key_down_callback && !key_down_callback(context, key, key_modifier, native_dp_ratio, true))
-				break;
-			// Otherwise, hand the event over to the context by calling the input handler as normal.
-			if (!RmlSDL::InputEventHandler(context, ev))
-				break;
-			// The key was not consumed by the context either, try keyboard shortcuts of lower priority.
-			if (key_down_callback && !key_down_callback(context, key, key_modifier, native_dp_ratio, false))
-				break;
-		}
-		break;
-		case SDL_WINDOWEVENT:
-		{
-			switch (ev.window.event)
-			{
-			case SDL_WINDOWEVENT_SIZE_CHANGED:
-			{
-				Rml::Vector2i dimensions(ev.window.data1, ev.window.data2);
-				data->render_interface.SetViewport(dimensions.x, dimensions.y);
-			}
-			break;
-			}
-			RmlSDL::InputEventHandler(context, ev);
-		}
-		break;
-		default:
-		{
-			RmlSDL::InputEventHandler(context, ev);
-		}
-		break;
-		}
-		has_event = SDL_PollEvent(&ev);
-	}
-
-	return result;
 }
 
 void Backend::RequestExit()
 {
-	RMLUI_ASSERT(data);
-
-	data->running = false;
+	running = false;
 }
 
 void Backend::BeginFrame()
 {
-	RMLUI_ASSERT(data);
-
-	data->render_interface.Clear();
-	data->render_interface.BeginFrame();
+	RmlGL3::Clear();
+	RmlGL3::BeginFrame();
 }
 
 void Backend::PresentFrame()
 {
-	RMLUI_ASSERT(data);
+	RmlGL3::EndFrame();
 
-	data->render_interface.EndFrame();
-	SDL_GL_SwapWindow(data->window);
+	SDL_GL_SwapWindow(window);
+}
 
-	// Optional, used to mark frames during performance profiling.
-	RMLUI_FrameMark;
+void Backend::SetContext(Rml::Context* new_context)
+{
+	context = new_context;
+	RmlSDL::SetContextForInput(new_context);
+	UpdateWindowDimensions();
+}
+
+static void ProcessKeyDown(SDL_Event& event, Rml::Input::KeyIdentifier key_identifier, const int key_modifier_state)
+{
+	if (!context)
+		return;
+
+	// Toggle debugger and set dp-ratio using Ctrl +/-/0 keys. These global shortcuts take priority.
+	if (key_identifier == Rml::Input::KI_F8)
+	{
+		Rml::Debugger::SetVisible(!Rml::Debugger::IsVisible());
+	}
+	else if (key_identifier == Rml::Input::KI_0 && key_modifier_state & Rml::Input::KM_CTRL)
+	{
+		context->SetDensityIndependentPixelRatio(1.f);
+	}
+	else if (key_identifier == Rml::Input::KI_1 && key_modifier_state & Rml::Input::KM_CTRL)
+	{
+		context->SetDensityIndependentPixelRatio(1.f);
+	}
+	else if (key_identifier == Rml::Input::KI_OEM_MINUS && key_modifier_state & Rml::Input::KM_CTRL)
+	{
+		const float new_dp_ratio = Rml::Math::Max(context->GetDensityIndependentPixelRatio() / 1.2f, 0.5f);
+		context->SetDensityIndependentPixelRatio(new_dp_ratio);
+	}
+	else if (key_identifier == Rml::Input::KI_OEM_PLUS && key_modifier_state & Rml::Input::KM_CTRL)
+	{
+		const float new_dp_ratio = Rml::Math::Min(context->GetDensityIndependentPixelRatio() * 1.2f, 2.5f);
+		context->SetDensityIndependentPixelRatio(new_dp_ratio);
+	}
+	else
+	{
+		// No global shortcuts detected, submit the key to platform handler.
+		if (RmlSDL::EventHandler(event))
+		{
+			// The key was not consumed, check for shortcuts that are of lower priority.
+			if (key_identifier == Rml::Input::KI_R && key_modifier_state & Rml::Input::KM_CTRL)
+			{
+				for (int i = 0; i < context->GetNumDocuments(); i++)
+				{
+					Rml::ElementDocument* document = context->GetDocument(i);
+					const Rml::String& src = document->GetSourceURL();
+					if (src.size() > 4 && src.substr(src.size() - 4) == ".rml")
+					{
+						document->ReloadStyleSheet();
+					}
+				}
+			}
+		}
+	}
 }

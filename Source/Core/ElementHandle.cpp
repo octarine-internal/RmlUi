@@ -4,7 +4,7 @@
  * For the latest information, see http://github.com/mikke89/RmlUi
  *
  * Copyright (c) 2008-2010 CodePoint Ltd, Shift Technology Ltd
- * Copyright (c) 2019-2023 The RmlUi Team, and contributors
+ * Copyright (c) 2019 The RmlUi Team, and contributors
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -15,7 +15,7 @@
  *
  * The above copyright notice and this permission notice shall be included in
  * all copies or substantial portions of the Software.
- *
+ * 
  * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
  * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
  * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -30,8 +30,8 @@
 #include "../../Include/RmlUi/Core/ComputedValues.h"
 #include "../../Include/RmlUi/Core/ElementDocument.h"
 #include "../../Include/RmlUi/Core/ElementUtilities.h"
-#include "../../Include/RmlUi/Core/Event.h"
 #include "../../Include/RmlUi/Core/Property.h"
+#include "../../Include/RmlUi/Core/Event.h"
 
 namespace Rml {
 
@@ -45,14 +45,17 @@ ElementHandle::ElementHandle(const String& tag) : Element(tag), drag_start(0, 0)
 	initialised = false;
 }
 
-ElementHandle::~ElementHandle() {}
+ElementHandle::~ElementHandle()
+{
+}
 
 void ElementHandle::OnAttributeChange(const ElementAttributes& changed_attributes)
 {
 	Element::OnAttributeChange(changed_attributes);
 
 	// Reset initialised state if the move or size targets have changed.
-	if (changed_attributes.find("move_target") != changed_attributes.end() || changed_attributes.find("size_target") != changed_attributes.end())
+	if (changed_attributes.find("move_target") != changed_attributes.end() ||
+		changed_attributes.find("size_target") != changed_attributes.end())
 	{
 		initialised = false;
 		move_target = nullptr;
@@ -80,26 +83,6 @@ void ElementHandle::ProcessDefaultAction(Event& event)
 			initialised = true;
 		}
 
-		auto GetSize = [](const Box& box, const ComputedValues& computed) {
-			return box.GetSize((computed.box_sizing() == Style::BoxSizing::BorderBox) ? BoxArea::Border : BoxArea::Content);
-		};
-
-		// Set any auto margins to their current value, since auto-margins may affect the size and position of an element.
-		auto SetDefiniteMargins = [](Element* element, const ComputedValues& computed) {
-			auto SetDefiniteMargin = [](Element* element, PropertyId margin_id, BoxEdge edge) {
-				element->SetProperty(margin_id, Property(Math::Round(element->GetBox().GetEdge(BoxArea::Margin, edge)), Unit::PX));
-			};
-			using Style::Margin;
-			if (computed.margin_top().type == Margin::Auto)
-				SetDefiniteMargin(element, PropertyId::MarginTop, BoxEdge::Top);
-			if (computed.margin_right().type == Margin::Auto)
-				SetDefiniteMargin(element, PropertyId::MarginRight, BoxEdge::Right);
-			if (computed.margin_bottom().type == Margin::Auto)
-				SetDefiniteMargin(element, PropertyId::MarginBottom, BoxEdge::Bottom);
-			if (computed.margin_left().type == Margin::Auto)
-				SetDefiniteMargin(element, PropertyId::MarginLeft, BoxEdge::Left);
-		};
-
 		if (event == EventId::Dragstart)
 		{
 			// Store the drag starting position
@@ -108,49 +91,47 @@ void ElementHandle::ProcessDefaultAction(Event& event)
 			// Store current element position and size
 			if (move_target)
 			{
-				using namespace Style;
-				const Box& box = move_target->GetBox();
-				const auto& computed = move_target->GetComputedValues();
-
-				// Store the initial margin edge position, since top/left properties determine the margin position.
-				move_original_position.x = move_target->GetOffsetLeft() - box.GetEdge(BoxArea::Margin, BoxEdge::Left);
-				move_original_position.y = move_target->GetOffsetTop() - box.GetEdge(BoxArea::Margin, BoxEdge::Top);
-
-				// Check if we have auto-size together with definite right/bottom; if so, the size needs to be fixed to the current size.
-				if (computed.width().type == Width::Auto && computed.right().type != Right::Auto)
-					move_target->SetProperty(PropertyId::Width, Property(Math::Round(GetSize(box, computed).x), Unit::PX));
-				if (computed.height().type == Height::Auto && computed.bottom().type != Bottom::Auto)
-					move_target->SetProperty(PropertyId::Height, Property(Math::Round(GetSize(box, computed).y), Unit::PX));
-
-				SetDefiniteMargins(move_target, computed);
+				move_original_position.x = move_target->GetOffsetLeft();
+				move_original_position.y = move_target->GetOffsetTop();
 			}
 			if (size_target)
-			{
-				using namespace Style;
-				const Box& box = size_target->GetBox();
-				const auto& computed = size_target->GetComputedValues();
-
-				size_original_size = GetSize(box, computed);
-
-				SetDefiniteMargins(size_target, computed);
-			}
+				size_original_size = size_target->GetBox().GetSize(
+					(size_target->GetComputedValues().box_sizing() == Style::BoxSizing::BorderBox)
+					? BoxArea::Border
+					: BoxArea::Content);
 		}
 		else if (event == EventId::Drag)
 		{
-			const Vector2f delta = event.GetUnprojectedMouseScreenPos() - drag_start;
+			// Work out the delta
+			Vector2f delta = event.GetUnprojectedMouseScreenPos() - drag_start;
 
+			// Update the move and size objects
 			if (move_target)
 			{
-				const Vector2f new_position = (move_original_position + delta).Round();
-				move_target->SetProperty(PropertyId::Left, Property(new_position.x, Unit::PX));
-				move_target->SetProperty(PropertyId::Top, Property(new_position.y, Unit::PX));
+				move_target->SetProperty(PropertyId::Left, Property(Math::RoundFloat(move_original_position.x + delta.x), Unit::PX));
+				move_target->SetProperty(PropertyId::Top, Property(Math::RoundFloat(move_original_position.y + delta.y), Unit::PX));
 			}
 
 			if (size_target)
 			{
-				const Vector2f new_size = Math::Max((size_original_size + delta).Round(), Vector2f(0.f));
-				size_target->SetProperty(PropertyId::Width, Property(new_size.x, Unit::PX));
-				size_target->SetProperty(PropertyId::Height, Property(new_size.y, Unit::PX));
+				using namespace Style;
+				const auto& computed = size_target->GetComputedValues();
+
+				// Check if we have auto-margins; if so, they have to be set to the current margins.
+				if (computed.margin_top().type == Margin::Auto)
+					size_target->SetProperty(PropertyId::MarginTop, Property((float) Math::RealToInteger(size_target->GetBox().GetEdge(BoxArea::Margin, BoxEdge::Top)), Unit::PX));
+				if (computed.margin_right().type == Margin::Auto)
+					size_target->SetProperty(PropertyId::MarginRight, Property((float) Math::RealToInteger(size_target->GetBox().GetEdge(BoxArea::Margin, BoxEdge::Right)), Unit::PX));
+				if (computed.margin_bottom().type == Margin::Auto)
+					size_target->SetProperty(PropertyId::MarginBottom, Property((float) Math::RealToInteger(size_target->GetBox().GetEdge(BoxArea::Margin, BoxEdge::Bottom)), Unit::PX));
+				if (computed.margin_left().type == Margin::Auto)
+					size_target->SetProperty(PropertyId::MarginLeft, Property((float) Math::RealToInteger(size_target->GetBox().GetEdge(BoxArea::Margin, BoxEdge::Left)), Unit::PX));
+
+				float new_x = Math::RoundFloat(size_original_size.x + delta.x);
+				float new_y = Math::RoundFloat(size_original_size.y + delta.y);
+
+				size_target->SetProperty(PropertyId::Width, Property(Math::Max< float >(new_x, 0.f), Unit::PX));
+				size_target->SetProperty(PropertyId::Height, Property(Math::Max< float >(new_y, 0.f), Unit::PX));
 			}
 
 			Dictionary parameters;

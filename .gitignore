@@ -13,16 +13,11 @@
 # Distribution target
 /Distribution/
 
-# macOS directory info file
+# Ignore MacOSX directory info
 .DS_Store
 
-# Hidden folders
-.*/
-
-# Not ignore .github/
-!.github/
-
-# Visual Studio project files
+# VS user project files
+.vs/
 *.suo
 *.user
 *.opensdf
@@ -30,4 +25,3 @@
 Win32/
 x64/
 CMakeSettings.json
-compile_commands.json

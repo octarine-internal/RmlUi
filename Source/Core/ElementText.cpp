@@ -4,7 +4,7 @@
  * For the latest information, see http://github.com/mikke89/RmlUi
  *
  * Copyright (c) 2008-2010 CodePoint Ltd, Shift Technology Ltd
- * Copyright (c) 2019-2023 The RmlUi Team, and contributors
+ * Copyright (c) 2019 The RmlUi Team, and contributors
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -15,7 +15,7 @@
  *
  * The above copyright notice and this permission notice shall be included in
  * all copies or substantial portions of the Software.
- *
+ * 
  * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
  * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
  * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -36,43 +36,32 @@
 #include "../../Include/RmlUi/Core/GeometryUtilities.h"
 #include "../../Include/RmlUi/Core/Profiling.h"
 #include "../../Include/RmlUi/Core/Property.h"
-#include "../../Include/RmlUi/Core/TextShapingContext.h"
-#include "ComputeProperty.h"
 #include "ElementDefinition.h"
 #include "ElementStyle.h"
+#include "TransformState.h"
 
 namespace Rml {
 
-static bool BuildToken(String& token, const char*& token_begin, const char* string_end, bool first_token, bool collapse_white_space,
-	bool break_at_endline, Style::TextTransform text_transformation, bool decode_escape_characters);
+static bool BuildToken(String& token, const char*& token_begin, const char* string_end, bool first_token, bool collapse_white_space, bool break_at_endline, Style::TextTransform text_transformation, bool decode_escape_characters);
 static bool LastToken(const char* token_begin, const char* string_end, bool collapse_white_space, bool break_at_endline);
 
-void LogMissingFontFace(Element* element)
+ElementText::ElementText(const String& tag) : Element(tag), colour(255, 255, 255), opacity(1), decoration(this)
 {
-	const String font_family_property = element->GetProperty<String>("font-family");
-	if (font_family_property.empty())
-	{
-		Log::Message(Log::LT_WARNING, "No font face defined. Missing 'font-family' property. On element %s", element->GetAddress().c_str());
-	}
-	else
-	{
-		const ComputedValues& computed = element->GetComputedValues();
-		const String font_face_description = GetFontFaceDescription(font_family_property, computed.font_style(), computed.font_weight());
-		Log::Message(Log::LT_WARNING,
-			"No font face defined. Ensure (1) that Context::Update is run after new elements are constructed, before Context::Render, "
-			"and (2) that the specified font face %s has been successfully loaded. "
-			"Please see previous log messages for all successfully loaded fonts. On element %s",
-			font_face_description.c_str(), element->GetAddress().c_str());
-	}
+	dirty_layout_on_change = true;
+
+	generated_decoration = Style::TextDecoration::None;
+	decoration_property = Style::TextDecoration::None;
+
+	geometry_dirty = true;
+
+	font_effects_handle = 0;
+	font_effects_dirty = true;
+	font_handle_version = 0;
 }
 
-ElementText::ElementText(const String& tag) :
-	Element(tag), colour(255, 255, 255), opacity(1), font_handle_version(0), geometry_dirty(true), dirty_layout_on_change(true),
-	generated_decoration(Style::TextDecoration::None), decoration_property(Style::TextDecoration::None), font_effects_dirty(true),
-	font_effects_handle(0)
-{}
-
-ElementText::~ElementText() {}
+ElementText::~ElementText()
+{
+}
 
 void ElementText::SetText(const String& _text)
 {
@@ -97,7 +86,7 @@ void ElementText::OnRender()
 	FontFaceHandle font_face_handle = GetFontFaceHandle();
 	if (font_face_handle == 0)
 		return;
-
+	
 	// If our font effects have potentially changed, update it and force a geometry generation if necessary.
 	if (font_effects_dirty && UpdateFontEffects())
 		geometry_dirty = true;
@@ -117,19 +106,10 @@ void ElementText::OnRender()
 	// Regenerate text decoration if necessary.
 	if (decoration_property != generated_decoration)
 	{
-		if (decoration_property == Style::TextDecoration::None)
-		{
-			decoration.reset();
-		}
-		else
-		{
-			if (decoration)
-				decoration->Release(true);
-			else
-				decoration = MakeUnique<Geometry>();
+		decoration.Release(true);
 
+		if (decoration_property != Style::TextDecoration::None)
 			GenerateDecoration(font_face_handle);
-		}
 
 		generated_decoration = decoration_property;
 	}
@@ -137,49 +117,73 @@ void ElementText::OnRender()
 	const Vector2f translation = GetAbsoluteOffset();
 
 	bool render = true;
-	Vector2i clip_origin;
-	Vector2i clip_dimensions;
-	if (GetContext()->GetActiveClipRegion(clip_origin, clip_dimensions))
+	const RenderState& render_state = GetContext()->GetRenderState();
+
+	// Do a visibility test against the scissor region to avoid unnecessary render calls, but only if no transforms are applied for simplicity sake.
+	const Rectanglei scissor_region = render_state.GetScissorState();
+	if (scissor_region.Valid() && (!GetTransformState() || !GetTransformState()->GetTransform()))
 	{
-		const FontMetrics& font_metrics = GetFontEngineInterface()->GetFontMetrics(GetFontFaceHandle());
-		float clip_top = (float)clip_origin.y;
-		float clip_left = (float)clip_origin.x;
-		float clip_right = (float)(clip_origin.x + clip_dimensions.x);
-		float clip_bottom = (float)(clip_origin.y + clip_dimensions.y);
-		float ascent = font_metrics.ascent;
-		float descent = font_metrics.descent;
+		const int line_height = GetFontEngineInterface()->GetLineHeight(GetFontFaceHandle());
 
 		render = false;
 		for (const Line& line : lines)
 		{
-			float x_left = translation.x + line.position.x;
-			float x_right = x_left + line.width;
-			float y = translation.y + line.position.y;
-			float y_top = y - ascent;
-			float y_bottom = y + descent;
+			const Vector2i position = Vector2i(translation + line.position) - Vector2i(0, line_height);
+			const Rectanglei line_region = Rectanglei::FromPositionSize(position, {line.width, line_height});
 
-			render = !(x_left > clip_right || x_right < clip_left || y_top > clip_bottom || y_bottom < clip_top);
-			if (render)
+			if (scissor_region.Intersects(line_region))
+			{
+				render = true;
 				break;
+			}
 		}
 	}
-
+	
 	if (render)
 	{
 		for (size_t i = 0; i < geometry.size(); ++i)
 			geometry[i].Render(translation);
 	}
 
-	if (decoration)
-		decoration->Render(translation);
+	if (decoration_property != Style::TextDecoration::None)
+		decoration.Render(translation);
 }
 
-bool ElementText::GenerateLine(String& line, int& line_length, float& line_width, int line_begin, float maximum_line_width, float right_spacing_width,
-	bool trim_whitespace_prefix, bool decode_escape_characters, bool allow_empty)
+// Generates a token of text from this element, returning only the width.
+bool ElementText::GenerateToken(float& token_width, int line_begin)
 {
 	RMLUI_ZoneScoped;
-	RMLUI_ASSERT(
-		maximum_line_width >= 0.f); // TODO: Check all callers for conformance, check break at line condition below. Possibly check for FLT_MAX.
+
+	// Bail if we don't have a valid font face.
+	FontFaceHandle font_face_handle = GetFontFaceHandle();
+	if (font_face_handle == 0 ||
+		line_begin >= (int) text.size())
+		return 0;
+
+	// Determine how we are processing white-space while formatting the text.
+	using namespace Style;
+	auto& computed = GetComputedValues();
+	WhiteSpace white_space_property = computed.white_space();
+	bool collapse_white_space = white_space_property == WhiteSpace::Normal ||
+								white_space_property == WhiteSpace::Nowrap ||
+								white_space_property == WhiteSpace::Preline;
+	bool break_at_endline = white_space_property == WhiteSpace::Pre ||
+							white_space_property == WhiteSpace::Prewrap ||
+							white_space_property == WhiteSpace::Preline;
+
+	const char* token_begin = text.c_str() + line_begin;
+	String token;
+
+	BuildToken(token, token_begin, text.c_str() + text.size(), true, collapse_white_space, break_at_endline, computed.text_transform(), true);
+	token_width = (float) GetFontEngineInterface()->GetStringWidth(font_face_handle, token);
+
+	return LastToken(token_begin, text.c_str() + text.size(), collapse_white_space, break_at_endline);
+}
+
+// Generates a line of text rendered from this element
+bool ElementText::GenerateLine(String& line, int& line_length, float& line_width, int line_begin, float maximum_line_width, float right_spacing_width, bool trim_whitespace_prefix, bool decode_escape_characters)
+{
+	RMLUI_ZoneScoped;
 
 	FontFaceHandle font_face_handle = GetFontFaceHandle();
 
@@ -190,23 +194,23 @@ bool ElementText::GenerateLine(String& line, int& line_length, float& line_width
 
 	// Bail if we don't have a valid font face.
 	if (font_face_handle == 0)
-	{
-		LogMissingFontFace(GetParentNode() ? GetParentNode() : this);
 		return true;
-	}
 
 	// Determine how we are processing white-space while formatting the text.
 	using namespace Style;
-	const auto& computed = GetComputedValues();
+	auto& computed = GetComputedValues();
 	WhiteSpace white_space_property = computed.white_space();
-	bool collapse_white_space =
-		white_space_property == WhiteSpace::Normal || white_space_property == WhiteSpace::Nowrap || white_space_property == WhiteSpace::Preline;
-	bool break_at_line = (maximum_line_width >= 0) &&
-		(white_space_property == WhiteSpace::Normal || white_space_property == WhiteSpace::Prewrap || white_space_property == WhiteSpace::Preline);
-	bool break_at_endline =
-		white_space_property == WhiteSpace::Pre || white_space_property == WhiteSpace::Prewrap || white_space_property == WhiteSpace::Preline;
+	bool collapse_white_space = white_space_property == WhiteSpace::Normal ||
+								white_space_property == WhiteSpace::Nowrap ||
+								white_space_property == WhiteSpace::Preline;
+	bool break_at_line = (maximum_line_width >= 0) && 
+		                   (white_space_property == WhiteSpace::Normal ||
+							white_space_property == WhiteSpace::Prewrap ||
+							white_space_property == WhiteSpace::Preline);
+	bool break_at_endline = white_space_property == WhiteSpace::Pre ||
+							white_space_property == WhiteSpace::Prewrap ||
+							white_space_property == WhiteSpace::Preline;
 
-	const TextShapingContext text_shaping_context{ computed.language(), computed.direction(), computed.letter_spacing() };
 	TextTransform text_transform_property = computed.text_transform();
 	WordBreak word_break = computed.word_break();
 
@@ -226,9 +230,8 @@ bool ElementText::GenerateLine(String& line, int& line_length, float& line_width
 			previous_codepoint = StringUtilities::ToCharacter(StringUtilities::SeekBackwardUTF8(&line.back(), line.data()));
 
 		// Generate the next token and determine its pixel-length.
-		bool break_line = BuildToken(token, next_token_begin, string_end, line.empty() && trim_whitespace_prefix, collapse_white_space,
-			break_at_endline, text_transform_property, decode_escape_characters);
-		int token_width = font_engine_interface->GetStringWidth(font_face_handle, token, text_shaping_context, previous_codepoint);
+		bool break_line = BuildToken(token, next_token_begin, string_end, line.empty() && trim_whitespace_prefix, collapse_white_space, break_at_endline, text_transform_property, decode_escape_characters);
+		int token_width = font_engine_interface->GetStringWidth(font_face_handle, token, previous_codepoint);
 
 		// If we're breaking to fit a line box, check if the token can fit on the line before we add it.
 		if (break_at_line)
@@ -251,9 +254,8 @@ bool ElementText::GenerateLine(String& line, int& line_length, float& line_width
 						token.clear();
 						next_token_begin = token_begin;
 						const char* partial_string_end = StringUtilities::SeekBackwardUTF8(token_begin + i, token_begin);
-						BuildToken(token, next_token_begin, partial_string_end, line.empty() && trim_whitespace_prefix, collapse_white_space,
-							break_at_endline, text_transform_property, decode_escape_characters);
-						token_width = font_engine_interface->GetStringWidth(font_face_handle, token, text_shaping_context, previous_codepoint);
+						break_line = BuildToken(token, next_token_begin, partial_string_end, line.empty() && trim_whitespace_prefix, collapse_white_space, break_at_endline, text_transform_property, decode_escape_characters);
+						token_width = font_engine_interface->GetStringWidth(font_face_handle, token, previous_codepoint);
 
 						if (force_loop_break_after_next || token_width <= max_token_width)
 						{
@@ -262,7 +264,7 @@ bool ElementText::GenerateLine(String& line, int& line_length, float& line_width
 						else if (next_token_begin == token_begin)
 						{
 							// This means the first character of the token doesn't fit. Let it overflow into the next line if we can.
-							if (allow_empty || !line.empty())
+							if (!line.empty())
 								return false;
 
 							// Not even the first character of the line fits. Go back to consume the first character even though it will overflow.
@@ -273,7 +275,7 @@ bool ElementText::GenerateLine(String& line, int& line_length, float& line_width
 
 					break_line = true;
 				}
-				else if (allow_empty || !line.empty())
+				else if (!line.empty())
 				{
 					// Let the token overflow into the next line.
 					return false;
@@ -287,7 +289,7 @@ bool ElementText::GenerateLine(String& line, int& line_length, float& line_width
 		line_width += token_width;
 
 		// Break out of the loop if an endline was forced.
-		if (break_line && (allow_empty || !line.empty()))
+		if (break_line)
 			return false;
 
 		// Set the beginning of the next token.
@@ -297,6 +299,7 @@ bool ElementText::GenerateLine(String& line, int& line_length, float& line_width
 	return true;
 }
 
+// Clears all lines of generated text and prepares the element for generating new lines.
 void ElementText::ClearLines()
 {
 	// Clear the rendering information.
@@ -305,18 +308,27 @@ void ElementText::ClearLines()
 
 	lines.clear();
 	generated_decoration = Style::TextDecoration::None;
+	decoration.Release(true);
 }
 
-void ElementText::AddLine(Vector2f line_position, String line)
+// Adds a new line into the text element.
+void ElementText::AddLine(Vector2f line_position, const String& line)
 {
+	FontFaceHandle font_face_handle = GetFontFaceHandle();
+
+	if (font_face_handle == 0)
+		return;
+
 	if (font_effects_dirty)
 		UpdateFontEffects();
 
-	lines.emplace_back(std::move(line), line_position);
+	Vector2f baseline_position = line_position + Vector2f(0.0f, (float)GetFontEngineInterface()->GetLineHeight(font_face_handle) - GetFontEngineInterface()->GetBaseline(font_face_handle));
+	lines.emplace_back(line, baseline_position);
 
 	geometry_dirty = true;
 }
 
+// Prevents the element from dirtying its document's layout when its text is changed.
 void ElementText::SuppressAutoLayout()
 {
 	dirty_layout_on_change = false;
@@ -332,7 +344,8 @@ void ElementText::OnPropertyChange(const PropertyIdSet& changed_properties)
 	bool font_face_changed = false;
 	auto& computed = GetComputedValues();
 
-	if (changed_properties.Contains(PropertyId::Color) || changed_properties.Contains(PropertyId::Opacity))
+	if (changed_properties.Contains(PropertyId::Color) ||
+		changed_properties.Contains(PropertyId::Opacity))
 	{
 		const float new_opacity = computed.opacity();
 		const bool opacity_changed = opacity != new_opacity;
@@ -353,13 +366,10 @@ void ElementText::OnPropertyChange(const PropertyIdSet& changed_properties)
 		}
 	}
 
-	if (changed_properties.Contains(PropertyId::FontFamily) ||     //
-		changed_properties.Contains(PropertyId::FontWeight) ||     //
-		changed_properties.Contains(PropertyId::FontStyle) ||      //
-		changed_properties.Contains(PropertyId::FontSize) ||       //
-		changed_properties.Contains(PropertyId::LetterSpacing) ||  //
-		changed_properties.Contains(PropertyId::RmlUi_Language) || //
-		changed_properties.Contains(PropertyId::RmlUi_Direction))
+	if (changed_properties.Contains(PropertyId::FontFamily) ||
+		changed_properties.Contains(PropertyId::FontWeight) ||
+		changed_properties.Contains(PropertyId::FontStyle) ||
+		changed_properties.Contains(PropertyId::FontSize))
 	{
 		font_face_changed = true;
 
@@ -379,8 +389,6 @@ void ElementText::OnPropertyChange(const PropertyIdSet& changed_properties)
 	if (changed_properties.Contains(PropertyId::TextDecoration))
 	{
 		decoration_property = computed.text_decoration();
-		if (decoration && decoration_property == Style::TextDecoration::None)
-			decoration.reset();
 	}
 
 	if (font_face_changed)
@@ -395,22 +403,21 @@ void ElementText::OnPropertyChange(const PropertyIdSet& changed_properties)
 		geometry_dirty = true;
 
 		// Re-colour the decoration geometry.
-		if (decoration)
-		{
-			Vector<Vertex>& vertices = decoration->GetVertices();
-			for (size_t i = 0; i < vertices.size(); ++i)
-				vertices[i].colour = colour;
+		Vector< Vertex >& vertices = decoration.GetVertices();
+		for (size_t i = 0; i < vertices.size(); ++i)
+			vertices[i].colour = colour;
 
-			decoration->Release();
-		}
+		decoration.Release();
 	}
 }
 
+// Returns the RML of this element
 void ElementText::GetRML(String& content)
 {
-	content += StringUtilities::EncodeRml(text);
+	content += text;
 }
 
+// Updates the configuration this element uses for its font.
 bool ElementText::UpdateFontEffects()
 {
 	RMLUI_ZoneScoped;
@@ -443,6 +450,7 @@ bool ElementText::UpdateFontEffects()
 	return false;
 }
 
+// Clears and regenerates all of the text's geometry.
 void ElementText::GenerateGeometry(const FontFaceHandle font_face_handle)
 {
 	RMLUI_ZoneScopedC(0xD2691E);
@@ -455,6 +463,7 @@ void ElementText::GenerateGeometry(const FontFaceHandle font_face_handle)
 	for (size_t i = 0; i < lines.size(); ++i)
 		GenerateGeometry(font_face_handle, lines[i]);
 
+	decoration.Release(true);
 	generated_decoration = Style::TextDecoration::None;
 
 	geometry_dirty = false;
@@ -462,39 +471,21 @@ void ElementText::GenerateGeometry(const FontFaceHandle font_face_handle)
 
 void ElementText::GenerateGeometry(const FontFaceHandle font_face_handle, Line& line)
 {
-	const auto& computed = GetComputedValues();
-	const TextShapingContext text_shaping_context{ computed.language(), computed.direction(), computed.letter_spacing() };
-
-	line.width = GetFontEngineInterface()->GenerateString(font_face_handle, font_effects_handle, line.text, line.position, colour, opacity,
-		text_shaping_context, geometry);
+	line.width = GetFontEngineInterface()->GenerateString(font_face_handle, font_effects_handle, line.text, line.position, colour, opacity, geometry);
+	for (size_t i = 0; i < geometry.size(); ++i)
+		geometry[i].SetHostElement(this);
 }
 
+// Generates any geometry necessary for rendering a line decoration (underline, strike-through, etc).
 void ElementText::GenerateDecoration(const FontFaceHandle font_face_handle)
 {
 	RMLUI_ZoneScopedC(0xA52A2A);
-	RMLUI_ASSERT(decoration);
-
-	const FontMetrics& metrics = GetFontEngineInterface()->GetFontMetrics(font_face_handle);
-
-	float offset = 0.f;
-	switch (decoration_property)
-	{
-	case Style::TextDecoration::Underline: offset = metrics.underline_position; break;
-	case Style::TextDecoration::Overline: offset = -1.1f * metrics.ascent; break;
-	case Style::TextDecoration::LineThrough: offset = -0.65f * metrics.x_height; break;
-	case Style::TextDecoration::None: return;
-	}
-
-	for (const Line& line : lines)
-	{
-		const Vector2f position = {line.position.x, line.position.y + offset};
-		const Vector2f size = {(float)line.width, metrics.underline_thickness};
-		GeometryUtilities::GenerateLine(decoration.get(), position, size, colour);
-	}
+	
+	for(const Line& line : lines)
+		GeometryUtilities::GenerateLine(font_face_handle, &decoration, line.position, line.width, decoration_property, colour);
 }
 
-static bool BuildToken(String& token, const char*& token_begin, const char* string_end, bool first_token, bool collapse_white_space,
-	bool break_at_endline, Style::TextTransform text_transformation, bool decode_escape_characters)
+static bool BuildToken(String& token, const char*& token_begin, const char* string_end, bool first_token, bool collapse_white_space, bool break_at_endline, Style::TextTransform text_transformation, bool decode_escape_characters)
 {
 	RMLUI_ASSERT(token_begin != string_end);
 
@@ -519,7 +510,8 @@ static bool BuildToken(String& token, const char*& token_begin, const char* stri
 		if (decode_escape_characters && character == '&')
 		{
 			// Find the terminating ';'.
-			while (token_begin != string_end && *token_begin != ';')
+			while (token_begin != string_end &&
+				   *token_begin != ';')
 				++token_begin;
 
 			// If we couldn't find the ';', print the token like normal text.
@@ -554,7 +546,8 @@ static bool BuildToken(String& token, const char*& token_begin, const char* stri
 
 		// Check for an endline token; if we're breaking on endlines and we find one, then return true to indicate a
 		// forced break.
-		if (break_at_endline && character == '\n')
+		if (break_at_endline &&
+			character == '\n')
 		{
 			token += '\n';
 			token_begin++;
@@ -581,7 +574,8 @@ static bool BuildToken(String& token, const char*& token_begin, const char* stri
 				// However, if we are the last non-whitespace character in the string, and there are trailing
 				// whitespace characters after this token, then we need to append a single space to the end of this
 				// token.
-				if (token_begin != string_end && LastToken(token_begin, string_end, collapse_white_space, break_at_endline))
+				if (token_begin != string_end &&
+					LastToken(token_begin, string_end, collapse_white_space, break_at_endline))
 					token += ' ';
 
 				return false;
@@ -626,14 +620,16 @@ static bool BuildToken(String& token, const char*& token_begin, const char* stri
 static bool LastToken(const char* token_begin, const char* string_end, bool collapse_white_space, bool break_at_endline)
 {
 	bool last_token = (token_begin == string_end);
-	if (collapse_white_space && !last_token)
+	if (collapse_white_space &&
+		!last_token)
 	{
 		last_token = true;
 		const char* character = token_begin;
 
 		while (character != string_end)
 		{
-			if (!StringUtilities::IsWhitespace(*character) || (break_at_endline && *character == '\n'))
+			if (!StringUtilities::IsWhitespace(*character) ||
+				(break_at_endline && *character == '\n'))
 			{
 				last_token = false;
 				break;

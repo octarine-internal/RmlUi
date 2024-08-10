@@ -4,7 +4,7 @@
  * For the latest information, see http://github.com/mikke89/RmlUi
  *
  * Copyright (c) 2008-2010 CodePoint Ltd, Shift Technology Ltd
- * Copyright (c) 2019-2023 The RmlUi Team, and contributors
+ * Copyright (c) 2019 The RmlUi Team, and contributors
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -29,6 +29,7 @@
 #ifndef RMLUI_CORE_ELEMENTBACKGROUNDBORDER_H
 #define RMLUI_CORE_ELEMENTBACKGROUNDBORDER_H
 
+#include "../../Include/RmlUi/Core/Box.h"
 #include "../../Include/RmlUi/Core/Geometry.h"
 #include "../../Include/RmlUi/Core/Types.h"
 
@@ -37,19 +38,33 @@ namespace Rml {
 class ElementBackgroundBorder {
 public:
 	ElementBackgroundBorder();
+	~ElementBackgroundBorder();
 
 	void Render(Element* element);
 
 	void DirtyBackground();
 	void DirtyBorder();
 
+	Geometry* GetClipGeometry(Element* element, BoxArea clip_area);
+
 private:
+	enum class BackgroundType { Main, BoxShadow, ClipBorder, ClipPadding, ClipContent, Count };
+	struct Background {
+		Background(Element* element) : geometry(element) {}
+		Geometry geometry;
+		Texture texture;
+	};
+
 	void GenerateGeometry(Element* element);
+	void GenerateBoxShadow(Element* element, ShadowList shadow_list, Vector4f border_radius, float opacity);
+
+	Geometry* GetGeometry(BackgroundType type);
+	Background& GetOrCreateBackground(Element* element, BackgroundType type);
 
 	bool background_dirty = false;
 	bool border_dirty = false;
 
-	Geometry geometry;
+	Array<UniquePtr<Background>, (size_t)BackgroundType::Count> geometries;
 };
 
 } // namespace Rml
