@@ -29,7 +29,7 @@
 #include "../../Include/RmlUi/Core/Math.h"
 #include "../../Include/RmlUi/Core/Types.h"
 #include <time.h>
-#include <math.h>
+#include <cmath>
 #include <stdlib.h>
 
 namespace Rml {
