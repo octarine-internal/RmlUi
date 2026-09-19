@@ -715,7 +715,11 @@ bool Context::ProcessMouseButtonDown(int button_index, int key_modifier_state)
 		scroll_parameters["autoscroll"] = true;
 
 		// Dispatch a mouse scroll event, this gives elements an opportunity to block autoscroll from being initialized.
-		if (hover->DispatchEvent(EventId::Mousescroll, scroll_parameters))
+		const bool autoscroll_allowed = hover->DispatchEvent(EventId::Mousescroll, scroll_parameters);
+
+		// A listener may have detached the hovered element while the event was dispatched, and
+		// Context::OnElementDetach nulls hover when it does.
+		if (autoscroll_allowed && hover)
 			scroll_controller->ActivateAutoscroll(hover->GetClosestScrollableContainer(), mouse_position);
 	}
 
@@ -823,6 +827,15 @@ bool Context::ProcessMouseWheel(Vector2f wheel_delta, int key_modifier_state)
 	// Dispatch a mouse scroll event, this gives elements an opportunity to block scrolling from being performed.
 	if (!hover->DispatchEvent(EventId::Mousescroll, scroll_parameters))
 		return false;
+
+	// A listener may have detached the hovered element while the event was dispatched, and
+	// Context::OnElementDetach nulls hover when it does. The check before the dispatch does
+	// not cover that, and everything below dereferences it.
+	if (!hover)
+	{
+		scroll_controller->Reset();
+		return true;
+	}
 
 	const float unit_scroll_length = UNIT_SCROLL_LENGTH * density_independent_pixel_ratio;
 	const Vector2f scroll_length = wheel_delta * unit_scroll_length;
