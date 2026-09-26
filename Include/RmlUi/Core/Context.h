@@ -380,6 +380,10 @@ private:
 	// itself can't be part of it.
 	ElementSet drag_hover_chain;
 
+	// Counts OnElementDetach calls. A chain held in a local while an event is dispatched is not scrubbed when a
+	// listener removes one of its elements, so a dispatch that moved this has to rebuild the chain.
+	uint64_t detach_count = 0;
+
 	UnorderedMap<String, UniquePtr<DataModel>> data_models;
 
 	UniquePtr<DataTypeRegister> default_data_type_register;

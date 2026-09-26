@@ -1128,6 +1128,8 @@ bool Context::RemoveDataModel(const String& name)
 
 void Context::OnElementDetach(Element* element)
 {
+	detach_count++;
+
 	auto it_hover = hover_chain.find(element);
 	if (it_hover != hover_chain.end())
 	{
@@ -1341,17 +1343,27 @@ void Context::UpdateHoverChain(Vector2i old_mouse_position, int key_modifier_sta
 		}
 	}
 
+	auto build_chain = [](Element* leaf, ElementSet& chain) {
+		chain.clear();
+		for (; leaf != nullptr; leaf = leaf->GetParentNode())
+			chain.insert(leaf);
+	};
+
 	// Build the new hover chain.
 	ElementSet new_hover_chain;
-	Element* element = hover;
-	while (element != nullptr)
+	build_chain(hover, new_hover_chain);
+
+	// Send mouseout / mouseover events. The new chain is a local that OnElementDetach does not scrub, and the new
+	// hover element is not in the chain it checks, so a mouseout listener that removes elements invalidates both.
+	uint64_t detached = detach_count;
+	SendEvents(hover_chain, new_hover_chain, EventId::Mouseout, parameters);
+	if (detach_count != detached)
 	{
-		new_hover_chain.insert(element);
-		element = element->GetParentNode();
+		hover = mouse_active ? GetElementAtPoint(position) : nullptr;
+		build_chain(hover, new_hover_chain);
 	}
 
-	// Send mouseout / mouseover events.
-	SendEvents(hover_chain, new_hover_chain, EventId::Mouseout, parameters);
+	detached = detach_count;
 	SendEvents(new_hover_chain, hover_chain, EventId::Mouseover, parameters);
 
 	// Send out drag events.
@@ -1360,21 +1372,40 @@ void Context::UpdateHoverChain(Vector2i old_mouse_position, int key_modifier_sta
 		drag_hover = GetElementAtPoint(position, drag);
 
 		ElementSet new_drag_hover_chain;
-		element = drag_hover;
-		while (element != nullptr)
-		{
-			new_drag_hover_chain.insert(element);
-			element = element->GetParentNode();
-		}
+		build_chain(drag_hover, new_drag_hover_chain);
 
 		if (drag_started && drag_verbose)
 		{
 			// Send out ondragover and ondragout events as appropriate.
+			const uint64_t detached_before_dragout = detach_count;
 			SendEvents(drag_hover_chain, new_drag_hover_chain, EventId::Dragout, drag_parameters);
+			if (detach_count != detached_before_dragout)
+			{
+				drag_hover = drag ? GetElementAtPoint(position, drag) : nullptr;
+				build_chain(drag_hover, new_drag_hover_chain);
+			}
 			SendEvents(new_drag_hover_chain, drag_hover_chain, EventId::Dragover, drag_parameters);
 		}
 
 		drag_hover_chain.swap(new_drag_hover_chain);
+	}
+
+	// Whatever the mouseover and drag listeners removed must not be stored in the chains.
+	if (detach_count != detached)
+	{
+		hover = mouse_active ? GetElementAtPoint(position) : nullptr;
+		build_chain(hover, new_hover_chain);
+
+		if (drag && mouse_active)
+		{
+			drag_hover = GetElementAtPoint(position, drag);
+			build_chain(drag_hover, drag_hover_chain);
+		}
+		else if (!drag)
+		{
+			drag_hover = nullptr;
+			drag_hover_chain.clear();
+		}
 	}
 
 	// Swap the new chain in.
