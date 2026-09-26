@@ -115,6 +115,36 @@ int ElementUtilities::GetStringWidth(Element* element, StringView string, Charac
 	return GetFontEngineInterface()->GetStringWidth(font_face_handle, string, text_shaping_context, prior_character);
 }
 
+// The window-space rectangle a transformed element's clip area covers, when its transform keeps that
+// area an axis-aligned rectangle - translation, scale, mirroring, quarter turns. A scissor then clips
+// exactly what the clip mask would, without rendering the mask into the stencil buffer.
+static bool GetAxisAlignedClipRegion(Element* element, BoxArea clip_area, const Matrix4f& transform, Rectanglef& out_region)
+{
+	const Vector2f offset = element->GetAbsoluteOffset(clip_area).Round();
+	const Vector2f size = element->GetRenderBox(clip_area).GetFillSize();
+	const Vector2f corners[4] = {offset, {offset.x + size.x, offset.y}, offset + size, {offset.x, offset.y + size.y}};
+	Vector2f projected[4];
+	for (int i = 0; i < 4; i++)
+	{
+		const Vector4f p = transform * Vector4f(corners[i].x, corners[i].y, 0.f, 1.f);
+		if (p.w <= 0.f)
+			return false;
+		projected[i] = Vector2f(p.x, p.y) / p.w;
+	}
+
+	constexpr float tolerance = 0.01f;
+	const bool rows_level = Math::Absolute(projected[0].y - projected[1].y) < tolerance && Math::Absolute(projected[3].y - projected[2].y) < tolerance &&
+		Math::Absolute(projected[0].x - projected[3].x) < tolerance && Math::Absolute(projected[1].x - projected[2].x) < tolerance;
+	const bool columns_level = Math::Absolute(projected[0].x - projected[1].x) < tolerance && Math::Absolute(projected[3].x - projected[2].x) < tolerance &&
+		Math::Absolute(projected[0].y - projected[3].y) < tolerance && Math::Absolute(projected[1].y - projected[2].y) < tolerance;
+	if (!rows_level && !columns_level)
+		return false;
+
+	out_region = Rectanglef::FromCorners(Math::Min(Math::Min(projected[0], projected[1]), Math::Min(projected[2], projected[3])),
+		Math::Max(Math::Max(projected[0], projected[1]), Math::Max(projected[2], projected[3])));
+	return true;
+}
+
 bool ElementUtilities::GetClippingRegion(Element* element, Rectanglei& out_clip_region, ClipMaskGeometryList* out_clip_mask_list,
 	bool force_clip_self)
 {
@@ -157,9 +187,16 @@ bool ElementUtilities::GetClippingRegion(Element* element, Rectanglei& out_clip_
 				const bool has_border_radius = (clip_computed.border_top_left_radius() > 0.f || clip_computed.border_top_right_radius() > 0.f ||
 					clip_computed.border_bottom_right_radius() > 0.f || clip_computed.border_bottom_left_radius() > 0.f);
 
+				// A transform that keeps the clip area an axis-aligned rectangle clips by scissor instead of a clip mask.
+				Rectanglef transformed_region;
+				const bool scissor_transformed = transform && has_clipping_content && !has_border_radius &&
+					GetAxisAlignedClipRegion(clipping_element, clip_area, *transform, transformed_region);
+				if (scissor_transformed)
+					clip_region = transformed_region.IntersectIfValid(clip_region);
+
 				// If the element has border-radius we always use a clip mask, since we can't easily predict if content is located on the curved
 				// region to be clipped. If the element has a transform we only use a clip mask when the content clips.
-				if (has_border_radius || (transform && has_clipping_content))
+				if (has_border_radius || (transform && has_clipping_content && !scissor_transformed))
 				{
 					Geometry* clip_geometry = clipping_element->GetElementBackgroundBorder()->GetClipGeometry(clipping_element, clip_area);
 					const ClipMaskOperation clip_operation = (out_clip_mask_list->empty() ? ClipMaskOperation::Set : ClipMaskOperation::Intersect);
