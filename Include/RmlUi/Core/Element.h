@@ -665,6 +665,20 @@ private:
 	void DirtyAbsoluteOffsetRecursive();
 	void UpdateAbsoluteOffsetAndRenderBoxData();
 	void UpdateOffset();
+
+	/// How much of the document a layout change at this element has to reformat.
+	enum class LayoutScope {
+		Document,  // the whole document
+		Contained, // only the subtree of the returned root
+		None,      // nothing: the element is inside a subtree that is not displayed
+	};
+	/// Finds the nearest element, starting at this one, whose own box and position do not depend on its content: an
+	/// absolutely positioned element with a definite width, height and inset on both axes that has been laid out before.
+	/// A change below it cannot move or resize anything outside it. A scroll container above it takes its overflow into
+	/// its scrollable area, so the root widens to that container, which then has to be such an element itself.
+	LayoutScope GetLayoutScope(Element*& out_root);
+	/// Whether this element's own box and position are independent of its content, see GetLayoutScope.
+	bool IsLayoutContainmentRoot() const;
 	void SetBaseline(float baseline);
 
 	void BuildLocalStackingContext();
@@ -787,6 +801,7 @@ private:
 	ElementMeta* meta;
 
 	friend class Rml::Context;
+	friend class Rml::ElementDocument;
 	friend class Rml::ElementStyle;
 	friend class Rml::ContainerBox;
 	friend class Rml::InlineLevelBox;

@@ -16,6 +16,7 @@
 #include "Template.h"
 #include "TemplateCache.h"
 #include "XMLParseTools.h"
+#include <algorithm>
 #include <limits.h>
 
 namespace Rml {
@@ -477,6 +478,46 @@ void ElementDocument::UpdateLayout()
 {
 	// Note: Carefully consider when to call this function for performance reasons.
 	// Ideally, only called once per update loop.
+	if (!layout_dirty && !contained_layout_roots.empty())
+	{
+		RMLUI_ZoneScopedN("UpdateLayoutContained");
+		ElementList roots;
+		roots.reserve(contained_layout_roots.size());
+		for (const ObserverPtr<Element>& observer : contained_layout_roots)
+		{
+			// A root taken out of the document since has dirtied its parent's layout on the way out.
+			Element* root = observer.get();
+			if (!root || root->GetOwnerDocument() != this)
+				continue;
+
+			// Re-validate against the values computed since it was dirtied.
+			Element* scope_root = nullptr;
+			const Element::LayoutScope scope = root->GetLayoutScope(scope_root);
+			if (scope == Element::LayoutScope::None)
+				continue;
+			if (scope == Element::LayoutScope::Document || scope_root != root)
+			{
+				layout_dirty = true;
+				break;
+			}
+			roots.push_back(root);
+		}
+		contained_layout_roots.clear();
+
+		if (!layout_dirty)
+		{
+			for (Element* root : roots)
+			{
+				// A root inside another one is formatted along with it.
+				bool nested = false;
+				for (Element* ancestor = root->GetParentNode(); ancestor && !nested; ancestor = ancestor->GetParentNode())
+					nested = std::find(roots.begin(), roots.end(), ancestor) != roots.end();
+				if (!nested)
+					LayoutEngine::FormatContained(root);
+			}
+		}
+	}
+
 	if (layout_dirty)
 	{
 		RMLUI_ZoneScoped;
@@ -491,7 +532,18 @@ void ElementDocument::UpdateLayout()
 		// Ignore dirtied layout during document formatting. Layouting must not require re-iteration.
 		// In particular, scrollbars being enabled may set the dirty flag, but this case is already handled within the layout engine.
 		layout_dirty = false;
+		contained_layout_roots.clear();
 	}
+}
+
+void ElementDocument::DirtyLayoutContained(Element* root)
+{
+	for (const ObserverPtr<Element>& observer : contained_layout_roots)
+	{
+		if (observer.get() == root)
+			return;
+	}
+	contained_layout_roots.push_back(root->GetObserverPtr());
 }
 
 void ElementDocument::UpdatePosition()

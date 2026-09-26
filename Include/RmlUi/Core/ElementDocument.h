@@ -144,6 +144,10 @@ private:
 	void DirtyLayout() override;
 	/// Returns true if the document has been marked as needing a re-layout.
 	bool IsLayoutDirty() override;
+	/// Formats only the given element's subtree at the next layout update, unless the whole document is to be formatted by
+	/// then. The element must be one whose own box and position do not depend on its content, see
+	/// Element::GetLayoutScope.
+	void DirtyLayoutContained(Element* root);
 
 	/// Notify the document that media query-related properties have changed and that style sheets need to be re-evaluated.
 	void DirtyMediaQueries();
@@ -172,7 +176,11 @@ private:
 	bool layout_dirty;
 	bool position_dirty;
 
+	// Subtrees to format on their own at the next layout update, while the document as a whole is not dirty.
+	Vector<ObserverPtr<Element>> contained_layout_roots;
+
 	friend class Rml::Context;
+	friend class Rml::Element;
 	friend class Rml::Factory;
 };
 

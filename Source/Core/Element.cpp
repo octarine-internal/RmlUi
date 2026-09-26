@@ -1825,7 +1825,16 @@ void Element::OnPropertyChange(const PropertyIdSet& changed_properties)
 
 		if (!changed_properties_forcing_layout.Empty())
 		{
-			DirtyLayout();
+			// Changing how the element takes part in its parent's layout reformats the parent, however contained the
+			// element's own box is.
+			if (changed_properties_forcing_layout.Contains(PropertyId::Position) || changed_properties_forcing_layout.Contains(PropertyId::Display) ||
+				changed_properties_forcing_layout.Contains(PropertyId::Float))
+			{
+				if (ElementDocument* document = GetOwnerDocument())
+					document->DirtyLayout();
+			}
+			else
+				DirtyLayout();
 		}
 		else if (top_right_bottom_left_changed)
 		{
@@ -1984,8 +1993,65 @@ void Element::OnChildRemove(Element* /*child*/) {}
 
 void Element::DirtyLayout()
 {
-	if (Element* document = GetOwnerDocument())
-		document->DirtyLayout();
+	ElementDocument* document = GetOwnerDocument();
+	if (!document || document->IsLayoutDirty())
+		return;
+
+	Element* root = nullptr;
+	switch (GetLayoutScope(root))
+	{
+	case LayoutScope::None: break;
+	case LayoutScope::Contained: document->DirtyLayoutContained(root); break;
+	case LayoutScope::Document: document->DirtyLayout(); break;
+	}
+}
+
+bool Element::IsLayoutContainmentRoot() const
+{
+	using namespace Style;
+	const ComputedValues& computed = meta->computed_values;
+	const Position position = computed.position();
+	return (position == Position::Absolute || position == Position::Fixed) && offset_parent && computed.width().type == Width::Length &&
+		computed.height().type == Height::Length && (computed.left().type != Left::Auto || computed.right().type != Right::Auto) &&
+		(computed.top().type != Top::Auto || computed.bottom().type != Bottom::Auto);
+}
+
+Element::LayoutScope Element::GetLayoutScope(Element*& out_root)
+{
+	using namespace Style;
+	ElementDocument* document = GetOwnerDocument();
+	out_root = nullptr;
+	bool reached_document = false;
+	for (Element* element = this; element; element = element->parent)
+	{
+		const ComputedValues& computed = element->meta->computed_values;
+		if (computed.display() == Display::None)
+			return LayoutScope::None;
+		if (element == document)
+		{
+			reached_document = true;
+			break;
+		}
+		if (!out_root)
+		{
+			if (element->IsLayoutContainmentRoot())
+				out_root = element;
+		}
+		else if (computed.overflow_x() != Overflow::Visible || computed.overflow_y() != Overflow::Visible)
+		{
+			// The root's overflow counts towards this scroll container's scrollable area: the scroll container has to be
+			// formatted too, which it can be on its own only if it is a root itself.
+			if (!element->IsLayoutContainmentRoot())
+				return LayoutScope::Document;
+			out_root = element;
+		}
+	}
+	if (!out_root || !reached_document)
+		return LayoutScope::Document;
+	const ComputedValues& document_computed = document->GetComputedValues();
+	if (document_computed.overflow_x() != Overflow::Visible || document_computed.overflow_y() != Overflow::Visible)
+		return LayoutScope::Document;
+	return LayoutScope::Contained;
 }
 
 bool Element::IsLayoutDirty()

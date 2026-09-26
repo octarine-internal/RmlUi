@@ -14,6 +14,11 @@ public:
 	/// @param[in] element The element to lay out.
 	/// @param[in] containing_block The size of the containing block.
 	static void FormatElement(Element* element, Vector2f containing_block);
+
+	/// Formats an absolutely positioned element laid out before, whose own box and position do not depend on its
+	/// content, in the containing block it was last laid out in: a change inside it reaches nothing outside it.
+	/// @param[in] element The element to lay out, see Element::IsLayoutContainmentRoot.
+	static void FormatContained(Element* element);
 };
 
 } // namespace Rml

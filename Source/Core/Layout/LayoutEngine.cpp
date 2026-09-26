@@ -30,4 +30,20 @@ void LayoutEngine::FormatElement(Element* element, Vector2f containing_block)
 	}
 }
 
+void LayoutEngine::FormatContained(Element* element)
+{
+	RMLUI_ASSERT(element && element->offset_parent);
+
+	// The containing block of an absolutely positioned element is the padding box of the element it is offset from.
+	RootBox root(element->offset_parent->GetBox());
+
+	if (!FormattingContext::FormatIndependent(&root, element, nullptr, FormattingContextType::Block))
+		Log::Message(Log::LT_ERROR, "Error while formatting element: %s", element->GetAddress().c_str());
+
+	// The insets resolve against the unchanged containing block, and the margins of the box just built.
+	element->UpdateOffset();
+	element->DirtyAbsoluteOffset();
+	element->ClampScrollOffsetRecursive();
+}
+
 } // namespace Rml
