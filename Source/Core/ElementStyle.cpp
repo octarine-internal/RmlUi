@@ -506,6 +506,7 @@ void ElementStyle::UpdateDefinition()
 		DirtyProperties(changed_properties);
 		dirty_variables.insert(std::make_move_iterator(changed_variables.begin()), std::make_move_iterator(changed_variables.end()));
 		dirty_var_shorthands.insert(changed_shorthands.begin(), changed_shorthands.end());
+		element->RequestUpdate();
 	}
 }
 
@@ -621,12 +622,14 @@ void ElementStyle::SetCustomProperty(const String& name, const Property& propert
 {
 	inline_properties.SetCustomProperty(name, property);
 	dirty_variables.insert(name);
+	element->RequestUpdate();
 }
 
 void ElementStyle::SetVarShorthand(ShorthandId id, const Property& property)
 {
 	inline_properties.SetVarShorthand(id, property);
 	dirty_var_shorthands.insert(id);
+	element->RequestUpdate();
 }
 
 void ElementStyle::RemoveProperty(PropertyId id)
@@ -641,13 +644,19 @@ void ElementStyle::RemoveProperty(PropertyId id)
 void ElementStyle::RemoveCustomProperty(const String& name)
 {
 	if (inline_properties.RemoveCustomProperty(name))
+	{
 		dirty_variables.insert(name);
+		element->RequestUpdate();
+	}
 }
 
 void ElementStyle::RemoveVarShorthand(ShorthandId id)
 {
 	if (inline_properties.RemoveVarShorthand(id))
+	{
 		dirty_var_shorthands.insert(id);
+		element->RequestUpdate();
+	}
 }
 
 const Property* ElementStyle::GetProperty(PropertyId id) const
@@ -804,6 +813,7 @@ float ElementStyle::ResolveRelativeLength(NumericValue value, RelativeTarget rel
 void ElementStyle::DirtyInheritedProperties()
 {
 	dirty_properties |= StyleSheetSpecification::GetRegisteredInheritedProperties();
+	element->RequestUpdate();
 }
 
 void ElementStyle::DirtyPropertiesWithUnits(Units units)
@@ -868,6 +878,7 @@ void ElementStyle::Shutdown()
 void ElementStyle::DirtyProperty(PropertyId id)
 {
 	dirty_properties.Insert(id);
+	element->RequestUpdate();
 }
 
 PropertyIdSet ElementStyle::ComputeValues(Style::ComputedValues& values, const Style::ComputedValues* parent_values,
@@ -1016,6 +1027,7 @@ PropertyIdSet ElementStyle::ComputeValues(Style::ComputedValues& values, const S
 			auto child = element->GetChild(i);
 			child->GetStyle()->dirty_properties |= dirty_inherited_properties;
 			child->GetStyle()->dirty_variables.insert(dirty_variables.begin(), dirty_variables.end());
+			child->RequestUpdate();
 		}
 	}
 
@@ -1039,6 +1051,8 @@ ElementStyle::DirtyPropertiesRef ElementStyle::GetDirtyPropertiesRef()
 void ElementStyle::DirtyProperties(const PropertyIdSet& properties)
 {
 	dirty_properties |= properties;
+	if (!properties.Empty())
+		element->RequestUpdate();
 }
 
 const Property* ElementStyle::ResolveVariables(PropertyId id, const Property* property, SmallUnorderedSet<String>& variable_dependencies,

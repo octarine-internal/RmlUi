@@ -75,6 +75,7 @@ public:
 protected:
 	/// Moves all children to be under control of the widget.
 	void OnUpdate() override;
+	bool UpdatesEveryFrame() const override { return true; }
 	/// Updates the layout of the widget's elements.
 	void OnRender() override;
 

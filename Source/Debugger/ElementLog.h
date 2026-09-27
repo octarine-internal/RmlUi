@@ -26,6 +26,7 @@ public:
 
 protected:
 	void OnUpdate() override;
+	bool UpdatesEveryFrame() const override { return true; }
 	void ProcessEvent(Event& event) override;
 
 private:

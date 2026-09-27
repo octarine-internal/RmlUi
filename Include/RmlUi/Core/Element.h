@@ -650,6 +650,16 @@ protected:
 	// Dirty the element style definition, including all descendants of the specified nodes.
 	void DirtyDefinition(DirtyNodes dirty_nodes);
 
+public:
+	/// Marks the element as having work for the next update, and its ancestors as leading to it. The update loop only
+	/// visits marked elements; anything that dirties styles, definitions, effects or animations calls this.
+	void RequestUpdate();
+
+protected:
+	/// Whether the element has to be updated on every frame regardless of what changed, for elements whose OnUpdate
+	/// polls: form controls (caret, dragging), the debugger panels and animated media.
+	virtual bool UpdatesEveryFrame() const;
+
 	void SetOwnerDocument(ElementDocument* document, bool force_set);
 
 	void OnStyleSheetChangeRecursive();
@@ -688,6 +698,10 @@ private:
 	Element* ClosestStackingContextContainer();
 
 	void UpdateDefinition();
+
+	/// Whether the element still has work of its own after an update: pending styles, definitions, effects, running
+	/// animations, scrollbars, or an OnUpdate that polls.
+	bool HasPendingUpdate() const;
 
 	void DirtyTransformState(bool perspective_dirty, bool transform_dirty);
 	void UpdateTransformState();
@@ -738,6 +752,10 @@ private:
 	bool dirty_transition : 1;
 	bool dirty_transform : 1;
 	bool dirty_perspective : 1;
+
+	// The element has update work of its own; some descendant has. The update loop skips subtrees with neither.
+	bool update_self : 1;
+	bool update_descendants : 1;
 
 	OwnedElementList children;
 	int num_non_dom_children;

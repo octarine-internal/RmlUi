@@ -83,6 +83,7 @@ public:
 protected:
 	/// Updates the control's widget.
 	void OnUpdate() override;
+	bool UpdatesEveryFrame() const override { return true; }
 	/// Renders the control's widget.
 	void OnRender() override;
 	/// Resizes and positions the control's widget.

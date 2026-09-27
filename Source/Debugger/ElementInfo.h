@@ -35,6 +35,7 @@ protected:
 	void ProcessEvent(Event& event) override;
 	/// Updates the element info if changed
 	void OnUpdate() override;
+	bool UpdatesEveryFrame() const override { return true; }
 
 private:
 	void SetSourceElement(Element* new_source_element);

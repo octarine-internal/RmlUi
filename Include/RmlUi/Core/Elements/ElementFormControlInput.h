@@ -55,6 +55,7 @@ public:
 protected:
 	/// Updates the element's underlying type.
 	void OnUpdate() override;
+	bool UpdatesEveryFrame() const override { return true; }
 	/// Renders the element's underlying type.
 	void OnRender() override;
 	/// Calls the element's underlying type.

@@ -21,6 +21,8 @@ public:
 
 	/// Updates the increment / decrement arrows.
 	void Update();
+	/// True while either scrollbar has been created; its arrows are then updated every frame.
+	bool HasScrollbars() const { return scrollbars[VERTICAL].widget || scrollbars[HORIZONTAL].widget; }
 
 	/// Enables and sizes one of the scrollbars.
 	/// @param[in] orientation Which scrollbar (vertical or horizontal) to enable.

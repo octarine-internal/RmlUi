@@ -26,6 +26,8 @@ public:
 
 	// Mark effects as dirty and force them to reset themselves.
 	void DirtyEffects();
+	// True until the next InstanceEffects.
+	bool IsDirty() const { return effects_dirty; }
 	// Mark the element data of effects as dirty.
 	void DirtyEffectsData();
 

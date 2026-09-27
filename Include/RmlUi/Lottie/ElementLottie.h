@@ -27,6 +27,7 @@ public:
 protected:
 	/// Updates the animation.
 	void OnUpdate() override;
+	bool UpdatesEveryFrame() const override { return true; }
 
 	/// Renders the animation.
 	void OnRender() override;

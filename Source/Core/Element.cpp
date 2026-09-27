@@ -72,7 +72,8 @@ RMLUI_RTTI_Define(Element)
 Element::Element(const String& tag) :
 	local_stacking_context(false), local_stacking_context_forced(false), stacking_context_dirty(false), computed_values_are_default_initialized(true),
 	visible(true), offset_fixed(false), absolute_offset_dirty(true), rounded_main_padding_size_dirty(true), dirty_definition(false),
-	dirty_child_definitions(false), dirty_animation(false), dirty_transition(false), dirty_transform(false), dirty_perspective(false), tag(tag),
+	dirty_child_definitions(false), dirty_animation(false), dirty_transition(false), dirty_transform(false), dirty_perspective(false),
+	update_self(true), update_descendants(true), tag(tag),
 	relative_offset_base(0, 0), relative_offset_position(0, 0), absolute_offset(0, 0), scroll_offset(0, 0)
 {
 	RMLUI_ASSERT(tag == StringUtilities::ToLower(tag));
@@ -125,28 +126,45 @@ void Element::Update(float dp_ratio, Vector2f vp_dimensions)
 	RMLUI_ZoneText(name.c_str(), name.size());
 #endif
 
-	OnUpdate();
-
-	HandleTransitionProperty();
-	HandleAnimationProperty();
-	AdvanceAnimations();
-
-	meta->scroll.Update();
-
-	UpdateProperties(dp_ratio, vp_dimensions);
-
-	// Do en extra pass over the animations and properties if the 'animation' property was just changed.
-	if (dirty_animation)
+	if (update_self)
 	{
+		OnUpdate();
+
+		HandleTransitionProperty();
 		HandleAnimationProperty();
 		AdvanceAnimations();
+
+		meta->scroll.Update();
+
 		UpdateProperties(dp_ratio, vp_dimensions);
+
+		// Do en extra pass over the animations and properties if the 'animation' property was just changed.
+		if (dirty_animation)
+		{
+			HandleAnimationProperty();
+			AdvanceAnimations();
+			UpdateProperties(dp_ratio, vp_dimensions);
+		}
+
+		meta->effects.InstanceEffects();
+
+		update_self = HasPendingUpdate();
 	}
 
-	meta->effects.InstanceEffects();
-
-	for (size_t i = 0; i < children.size(); i++)
-		children[i]->Update(dp_ratio, vp_dimensions);
+	// A clean subtree is skipped whole. The flag is cleared before the children run and re-derived from each of them
+	// afterwards, so a child dirtied again while its siblings update (its RequestUpdate walks back up to here) is kept.
+	if (update_descendants)
+	{
+		update_descendants = false;
+		for (size_t i = 0; i < children.size(); i++)
+		{
+			Element* child = children[i].get();
+			if (child->update_self || child->update_descendants)
+				child->Update(dp_ratio, vp_dimensions);
+			if (child->update_self || child->update_descendants)
+				update_descendants = true;
+		}
+	}
 
 	if (!animations.empty() && IsVisible(true))
 	{
@@ -2579,9 +2597,31 @@ void Element::DirtyDefinition(DirtyNodes dirty_nodes)
 	case DirtyNodes::SelfAndSiblings:
 		dirty_definition = true;
 		if (parent)
+		{
 			parent->dirty_child_definitions = true;
+			parent->RequestUpdate();
+		}
 		break;
 	}
+	RequestUpdate();
+}
+
+void Element::RequestUpdate()
+{
+	update_self = true;
+	for (Element* ancestor = parent; ancestor && !ancestor->update_descendants; ancestor = ancestor->parent)
+		ancestor->update_descendants = true;
+}
+
+bool Element::UpdatesEveryFrame() const
+{
+	return false;
+}
+
+bool Element::HasPendingUpdate() const
+{
+	return !animations.empty() || dirty_animation || dirty_transition || dirty_definition || dirty_child_definitions ||
+		meta->style.AnyPropertiesDirty() || meta->effects.IsDirty() || meta->scroll.HasScrollbars() || UpdatesEveryFrame();
 }
 
 void Element::UpdateDefinition()
@@ -2602,7 +2642,10 @@ void Element::UpdateDefinition()
 	{
 		dirty_child_definitions = false;
 		for (const ElementPtr& child : children)
+		{
 			child->dirty_definition = true;
+			child->RequestUpdate();
+		}
 	}
 }
 
@@ -2648,6 +2691,7 @@ bool Element::AddAnimationKey(PropertyId id, const Property& target_value, float
 		return false;
 
 	bool result = animation->AddKey(animation->GetDuration() + duration, target_value, *this, tween, true);
+	RequestUpdate();
 
 	return result;
 }
@@ -2655,6 +2699,7 @@ bool Element::AddAnimationKey(PropertyId id, const Property& target_value, float
 ElementAnimationList::iterator Element::StartAnimation(PropertyId property_id, const Property* start_value, int num_iterations,
 	bool alternate_direction, float delay, bool initiated_by_animation_property)
 {
+	RequestUpdate();
 	auto it = std::find_if(animations.begin(), animations.end(), [&](const ElementAnimation& el) { return el.GetPropertyId() == property_id; });
 
 	if (it != animations.end())
@@ -2728,12 +2773,14 @@ bool Element::AddAnimationKeyTime(PropertyId property_id, const Property* target
 		return false;
 
 	bool result = animation->AddKey(time, *target_value, *this, tween, true);
+	RequestUpdate();
 
 	return result;
 }
 
 bool Element::StartTransition(const Transition& transition, const Property& start_value, const Property& target_value)
 {
+	RequestUpdate();
 	auto it = std::find_if(animations.begin(), animations.end(), [&](const ElementAnimation& el) { return el.GetPropertyId() == transition.id; });
 
 	if (it != animations.end() && !it->IsTransition())

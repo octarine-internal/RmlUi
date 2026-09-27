@@ -318,6 +318,7 @@ void ElementEffects::RenderEffects(RenderStage render_stage)
 void ElementEffects::DirtyEffects()
 {
 	effects_dirty = true;
+	element->RequestUpdate();
 }
 
 void ElementEffects::DirtyEffectsData()
