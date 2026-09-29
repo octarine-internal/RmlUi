@@ -250,7 +250,12 @@ void ElementEffects::RenderEffects(RenderStage render_stage)
 
 		if (!filters.empty() || !mask_images.empty())
 		{
+			// Push the layer under the scissor the exit composite will use. A render interface that sizes its layers
+			// to the scissor otherwise gets whatever region the element rendered before this one left, and the
+			// composite reads outside the layer it drew into.
+			ApplyClippingRegion(PropertyId::Filter);
 			render_manager->PushLayer();
+			render_manager->SetScissorRegion(initial_scissor_region);
 		}
 
 		if (!backdrop_filters.empty())
