@@ -50,6 +50,58 @@ namespace {
 		return LayoutDetails::IsScrollContainer(computed.overflow_x(), computed.overflow_y());
 	}
 
+	// What a contained root puts into the scrollable area of a scroll container above it: its border box, and any of
+	// its content that overflows it without being clipped, in the container's scrollable coordinates.
+	Rectanglef ScrollFootprint(Element* root, Element* container)
+	{
+		const Vector2f origin =
+			container->GetAbsoluteOffset(BoxArea::Padding) - Vector2f(container->GetScrollLeft(), container->GetScrollTop());
+		Vector2f size = root->GetBox().GetSize(BoxArea::Border);
+		const auto& computed = root->GetComputedValues();
+		if (computed.overflow_x() == Style::Overflow::Visible)
+			size.x = Math::Max(size.x, root->GetClientLeft() + root->GetScrollWidth());
+		if (computed.overflow_y() == Style::Overflow::Visible)
+			size.y = Math::Max(size.y, root->GetClientTop() + root->GetScrollHeight());
+		return Rectanglef::FromPositionSize(root->GetAbsoluteOffset(BoxArea::Border) - origin, size);
+	}
+
+	struct ContainedFootprint {
+		Element* container;
+		Rectanglef before;
+	};
+
+	// Where a contained root stands in every scroll container above it, the document included, before it is formatted.
+	void CollectFootprints(Element* root, Vector<ContainedFootprint>& out)
+	{
+		out.clear();
+		for (Element* ancestor = root->GetParentNode(); ancestor; ancestor = ancestor->GetParentNode())
+			if (IsScrollContainer(ancestor))
+				out.push_back({ancestor, ScrollFootprint(root, ancestor)});
+	}
+
+	// Whether formatting the root alone left every scrollable area above it as it was, which formatting it alone
+	// cannot update. An area is the union of what its content covers, so one footprint moves it only by reaching an
+	// edge: the far edge of content that overflows the client area, where the root may be what defines it, or past the
+	// client area of content that does not.
+	bool FootprintsLeftAreasAlone(Element* root, const Vector<ContainedFootprint>& footprints)
+	{
+		constexpr float slack = 0.5f;
+		const auto clear = [&](float before, float after, float extent, float client) {
+			if (extent > client + slack)
+				return before < extent - slack && after < extent - slack;
+			return after <= client + slack;
+		};
+		for (const ContainedFootprint& footprint : footprints)
+		{
+			Element* container = footprint.container;
+			const Rectanglef after = ScrollFootprint(root, container);
+			if (!clear(footprint.before.Right(), after.Right(), container->GetScrollWidth(), container->GetClientWidth()) ||
+				!clear(footprint.before.Bottom(), after.Bottom(), container->GetScrollHeight(), container->GetClientHeight()))
+				return false;
+		}
+		return true;
+	}
+
 	int GetNavigationHeuristic(const Rectanglef& source, const Rectanglef& target, NavigationSearchDirection direction)
 	{
 		enum Axis { Horizontal = 0, Vertical = 1 };
@@ -506,14 +558,24 @@ void ElementDocument::UpdateLayout()
 
 		if (!layout_dirty)
 		{
+			Vector<ContainedFootprint> footprints;
 			for (Element* root : roots)
 			{
 				// A root inside another one is formatted along with it.
 				bool nested = false;
 				for (Element* ancestor = root->GetParentNode(); ancestor && !nested; ancestor = ancestor->GetParentNode())
 					nested = std::find(roots.begin(), roots.end(), ancestor) != roots.end();
-				if (!nested)
-					LayoutEngine::FormatContained(root);
+				if (nested)
+					continue;
+
+				CollectFootprints(root, footprints);
+				LayoutEngine::FormatContained(root);
+				// A scrollable area it moved is brought up to date by formatting the whole document, below.
+				if (!FootprintsLeftAreasAlone(root, footprints))
+				{
+					layout_dirty = true;
+					break;
+				}
 			}
 		}
 	}

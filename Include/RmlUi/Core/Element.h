@@ -685,7 +685,8 @@ private:
 	/// Finds the nearest element, starting at this one, whose own box and position do not depend on its content: an
 	/// absolutely positioned element with a definite width, height and inset on both axes that has been laid out before.
 	/// A change below it cannot move or resize anything outside it. A scroll container above it takes its overflow into
-	/// its scrollable area, so the root widens to that container, which then has to be such an element itself.
+	/// its scrollable area: one that is such an element itself becomes the root, and formatting it updates that area.
+	/// Any other, the document included, is checked when the root is formatted instead - see ElementDocument::UpdateLayout.
 	LayoutScope GetLayoutScope(Element*& out_root);
 	/// Whether this element's own box and position are independent of its content, see GetLayoutScope.
 	bool IsLayoutContainmentRoot() const;

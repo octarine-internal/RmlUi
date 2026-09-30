@@ -2055,19 +2055,15 @@ Element::LayoutScope Element::GetLayoutScope(Element*& out_root)
 			if (element->IsLayoutContainmentRoot())
 				out_root = element;
 		}
-		else if (computed.overflow_x() != Overflow::Visible || computed.overflow_y() != Overflow::Visible)
+		else if ((computed.overflow_x() != Overflow::Visible || computed.overflow_y() != Overflow::Visible) &&
+			element->IsLayoutContainmentRoot())
 		{
-			// The root's overflow counts towards this scroll container's scrollable area: the scroll container has to be
-			// formatted too, which it can be on its own only if it is a root itself.
-			if (!element->IsLayoutContainmentRoot())
-				return LayoutScope::Document;
+			// The root's overflow counts towards this scroll container's scrollable area, which formatting the
+			// container as the root brings up to date. One that cannot be the root is checked after formatting instead.
 			out_root = element;
 		}
 	}
 	if (!out_root || !reached_document)
-		return LayoutScope::Document;
-	const ComputedValues& document_computed = document->GetComputedValues();
-	if (document_computed.overflow_x() != Overflow::Visible || document_computed.overflow_y() != Overflow::Visible)
 		return LayoutScope::Document;
 	return LayoutScope::Contained;
 }
