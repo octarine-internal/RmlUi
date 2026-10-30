@@ -1893,7 +1893,20 @@ void Element::OnPropertyChange(const PropertyIdSet& changed_properties)
 				parent->DirtyStackingContext();
 
 			if (!visible)
-				Blur();
+			{
+				Context* context = GetContext();
+				if (context != nullptr && Contains(context->GetFocusElement()))
+				{
+					Element* hidden = this;
+					for (Element* ancestor = parent; ancestor != nullptr; ancestor = ancestor->parent)
+						if (!ancestor->visible)
+							hidden = ancestor;
+					for (Element* ancestor = hidden->parent; ancestor != nullptr && !ancestor->Focus(); ancestor = ancestor->parent)
+						;
+				}
+				else
+					Blur();
+			}
 		}
 	}
 

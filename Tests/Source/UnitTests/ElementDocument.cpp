@@ -224,6 +224,77 @@ TEST_CASE("Focus")
 	TestsShell::ShutdownShell();
 }
 
+static const String document_hidden_focus_rml = R"(
+<rml>
+<head>
+	<link type="text/rcss" href="/assets/rml.rcss"/>
+	<style>
+		body { font-family: LatoLatin; }
+		input { tab-index: auto; }
+	</style>
+</head>
+<body id="body">
+	<div id="window">
+		<div id="row">Row</div>
+		<div><input type="text" id="search"/></div>
+	</div>
+</body>
+</rml>
+)";
+
+TEST_CASE("Focus.HiddenAncestor")
+{
+	Context* context = TestsShell::GetContext();
+	REQUIRE(context);
+
+	ElementDocument* document = context->LoadDocumentFromMemory(document_hidden_focus_rml);
+	REQUIRE(document);
+	document->Show();
+	context->Update();
+
+	Element* window = document->GetElementById("window");
+	REQUIRE(window);
+
+	SUBCASE("Text input")
+	{
+		document->GetElementById("search")->Focus();
+		CHECK_FALSE(context->ProcessKeyDown(Input::KI_A, 0));
+
+		window->SetProperty("display", "none");
+		document->UpdateDocument();
+
+		CHECK(context->GetFocusElement() == document);
+		CHECK(context->ProcessKeyDown(Input::KI_A, 0));
+		CHECK(context->ProcessKeyDown(Input::KI_TAB, 0));
+	}
+
+	SUBCASE("Tab")
+	{
+		document->GetElementById("row")->Focus();
+
+		window->SetProperty("display", "none");
+		document->UpdateDocument();
+
+		CHECK(context->ProcessKeyDown(Input::KI_TAB, 0));
+		CHECK(context->GetFocusElement() == document);
+		CHECK(context->ProcessKeyDown(Input::KI_A, 0));
+	}
+
+	SUBCASE("Inherited visibility")
+	{
+		document->GetElementById("search")->Focus();
+
+		window->SetProperty("visibility", "hidden");
+		document->UpdateDocument();
+
+		CHECK(context->GetFocusElement() == document);
+		CHECK(context->ProcessKeyDown(Input::KI_A, 0));
+	}
+
+	document->Close();
+	TestsShell::ShutdownShell();
+}
+
 TEST_CASE("Load")
 {
 	namespace tl = trompeloeil;
