@@ -48,6 +48,7 @@ void RenderManager::PrepareRender(Vector2i dimensions)
 	RMLUI_ASSERT(state.clip_mask_list == default_state.clip_mask_list);
 	RMLUI_ASSERT(state.scissor_region == default_state.scissor_region);
 	RMLUI_ASSERT(state.transform == default_state.transform);
+	RMLUI_ASSERT(state.anchor == default_state.anchor);
 	RMLUI_ASSERTMSG(render_stack.empty(), "Unbalanced render stack detected, ensure every PushLayer call has a corresponding call to PopLayer.");
 #endif
 
@@ -102,7 +103,9 @@ void RenderManager::SetScissorRegion(Rectanglei new_region)
 
 	if (new_scissor_enable)
 	{
-		new_region = new_region.Intersect(Rectanglei::FromSize(viewport_dimensions));
+		// anchored content is laid out at the origin and moved when presented: the viewport does not bound it
+		if (state.anchor < 0)
+			new_region = new_region.Intersect(Rectanglei::FromSize(viewport_dimensions));
 
 		if (new_region != state.scissor_region)
 			render_interface->SetScissorRegion(new_region);
@@ -153,6 +156,15 @@ void RenderManager::SetTransform(const Matrix4f* p_new_transform)
 	}
 }
 
+void RenderManager::SetAnchor(int slot)
+{
+	if (state.anchor != slot)
+	{
+		render_interface->SetAnchor(slot);
+		state.anchor = slot;
+	}
+}
+
 void RenderManager::ApplyClipMask(const ClipMaskGeometryList& clip_elements)
 {
 	const bool clip_mask_enabled = !clip_elements.empty();
@@ -177,6 +189,8 @@ void RenderManager::ApplyClipMask(const ClipMaskGeometryList& clip_elements)
 
 void RenderManager::SetState(const RenderState& next)
 {
+	SetAnchor(next.anchor);
+
 	SetScissorRegion(next.scissor_region);
 
 	SetClipMask(next.clip_mask_list);
@@ -236,6 +250,17 @@ void RenderManager::Render(const Geometry& geometry, Vector2f translation, Textu
 		else
 			render_interface->RenderGeometry(geometry_handle, translation, texture_handle);
 	}
+}
+
+TextureHandle RenderManager::GetTextureHandle(Texture texture)
+{
+	if (texture.render_manager != this)
+		return {};
+	if (texture.file_index != TextureFileIndex::Invalid)
+		return texture_database->file_database.GetHandle(render_interface, texture.file_index);
+	if (texture.callback_index != StableVectorIndex::Invalid)
+		return texture_database->callback_database.GetHandle(this, render_interface, texture.callback_index);
+	return {};
 }
 
 void RenderManager::GetTextureSourceList(StringList& source_list) const

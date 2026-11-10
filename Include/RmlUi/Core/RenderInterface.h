@@ -92,6 +92,12 @@ public:
 	/// @note The transform applies to all functions that render with a geometry handle, and only those.
 	virtual void SetTransform(const Matrix4f* transform);
 
+	/// Called by RmlUi when the render anchor changes: what is rendered from here on belongs to the anchor
+	/// `slot`, or to none when it is -1. The application moves anchored content to where its anchor lands
+	/// when the frame is presented, and lays out an anchored element as if at the origin.
+	/// @param[in] slot The anchor, or -1.
+	virtual void SetAnchor(int slot);
+
 	/// Called by RmlUi when it wants to push a new layer onto the render stack, setting it as the new render target.
 	/// @return An application-specified handle representing the new layer. The value 'zero' is reserved for the initial base layer.
 	/// @note The new layer should be initialized to transparent black within the current scissor region.

@@ -23,6 +23,8 @@ void RenderInterface::RenderToClipMask(ClipMaskOperation /*operation*/, Compiled
 
 void RenderInterface::SetTransform(const Matrix4f* /*transform*/) {}
 
+void RenderInterface::SetAnchor(int /*slot*/) {}
+
 LayerHandle RenderInterface::PushLayer()
 {
 	return {};

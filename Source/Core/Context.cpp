@@ -1433,6 +1433,10 @@ Element* Context::GetElementAtPoint(Vector2f point, const Element* ignore_elemen
 		element = root.get();
 	}
 
+	// anchored content is drawn wherever its anchor lands, not where it is laid out: it takes no input
+	if (element->GetRenderAnchor() >= 0)
+		return nullptr;
+
 	bool is_modal = false;
 	ElementDocument* focus_document = nullptr;
 

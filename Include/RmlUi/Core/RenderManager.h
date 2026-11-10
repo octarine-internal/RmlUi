@@ -35,6 +35,7 @@ struct RenderState {
 	Rectanglei scissor_region = Rectanglei::MakeInvalid();
 	ClipMaskGeometryList clip_mask_list;
 	Matrix4f transform = Matrix4f::Identity();
+	int anchor = -1;
 };
 
 /**
@@ -61,6 +62,9 @@ public:
 
 	void SetTransform(const Matrix4f* new_transform);
 
+	/// Ties what is rendered from here on to an anchor (see RenderInterface::SetAnchor), or to none with -1.
+	void SetAnchor(int slot);
+
 	// Retrieves the cached render state. If setting this state again, ensure the lifetimes of referenced objects are
 	// still valid. Possibly invalidating actions include destroying an element, or altering its transform property.
 	const RenderState& GetState() const { return state; }
@@ -71,6 +75,9 @@ public:
 
 	Texture LoadTexture(const String& source, const String& document_path = String());
 	CallbackTexture MakeCallbackTexture(CallbackTextureFunction callback);
+	/// The render interface's handle of a texture of this render manager, loading or generating it on first use; zero when that
+	/// fails. For elements that draw through the render interface directly.
+	TextureHandle GetTextureHandle(Texture texture);
 
 	CompiledFilter CompileFilter(const String& name, const Dictionary& parameters);
 	CompiledShader CompileShader(const String& name, const Dictionary& parameters);

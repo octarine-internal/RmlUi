@@ -155,6 +155,14 @@ public:
 	/// @return True if the element is within this element, false otherwise.
 	virtual bool IsPointWithinElement(Vector2f point);
 
+	/// Ties the element and everything it renders to an anchor of the render interface (see
+	/// RenderInterface::SetAnchor), or unties it with -1. An anchored element is a stacking context of its
+	/// own, nothing above it clips it, and it takes no input: it is drawn wherever its anchor lands.
+	/// @param[in] slot The anchor, or -1.
+	void SetRenderAnchor(int slot);
+	/// Returns the anchor set with SetRenderAnchor, or -1.
+	int GetRenderAnchor() const { return render_anchor; }
+
 	/// Returns the visibility of the element.
 	/// @param[in] include_ancestors Check parent elements for visibility
 	/// @return True if the element is visible, false otherwise.
@@ -741,6 +749,8 @@ private:
 	bool computed_values_are_default_initialized;
 
 	bool visible; // True if the element is visible and active.
+
+	int render_anchor = -1;
 
 	bool offset_fixed;
 	bool absolute_offset_dirty;

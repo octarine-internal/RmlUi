@@ -158,7 +158,8 @@ bool ElementUtilities::GetClippingRegion(Element* element, Rectanglei& out_clip_
 	// Search through the element's ancestors, finding all elements that clip their overflow and have overflow to clip.
 	// For each that we find, we combine their clipping region with the existing clipping region, and so build up a
 	// complete clipping region for the element.
-	Element* clipping_element = (force_clip_self ? element : element->GetOffsetParent());
+	// an anchored element is drawn wherever its anchor lands, away from the ancestors laid out around it
+	Element* clipping_element = (force_clip_self ? element : element->GetRenderAnchor() >= 0 ? nullptr : element->GetOffsetParent());
 
 	Rectanglef clip_region = Rectanglef::MakeInvalid();
 
@@ -230,8 +231,8 @@ bool ElementUtilities::GetClippingRegion(Element* element, Rectanglei& out_clip_
 		// Inherit how many clip regions this ancestor ignores.
 		num_ignored_clips = Math::Max(num_ignored_clips, clip_number);
 
-		// If this region ignores all clipping regions, then we do too.
-		if (clip_none)
+		// If this region ignores all clipping regions, then we do too. Nothing above an anchored element clips it.
+		if (clip_none || clipping_element->GetRenderAnchor() >= 0)
 			break;
 
 		// Climb the tree to this region's parent.

@@ -12,6 +12,7 @@
 #include "../../Include/RmlUi/Core/PropertiesIteratorView.h"
 #include "../../Include/RmlUi/Core/PropertyDefinition.h"
 #include "../../Include/RmlUi/Core/PropertyIdSet.h"
+#include "../../Include/RmlUi/Core/RenderManager.h"
 #include "../../Include/RmlUi/Core/StyleSheet.h"
 #include "../../Include/RmlUi/Core/StyleSheetSpecification.h"
 #include "../../Include/RmlUi/Core/TransformPrimitive.h"
@@ -211,6 +212,11 @@ void Element::Render()
 	UpdateTransformState();
 	ElementUtilities::ApplyTransform(*this);
 
+	RenderManager* anchor_manager = (render_anchor >= 0 ? GetRenderManager() : nullptr);
+	const int outer_anchor = (anchor_manager ? anchor_manager->GetState().anchor : -1);
+	if (anchor_manager)
+		anchor_manager->SetAnchor(render_anchor);
+
 	meta->effects.RenderEffects(RenderStage::Enter);
 
 	if (ElementUtilities::SetClippingRegion(this))
@@ -229,6 +235,9 @@ void Element::Render()
 
 	ElementUtilities::ApplyTransform(*this);
 	meta->effects.RenderEffects(RenderStage::Exit);
+
+	if (anchor_manager)
+		anchor_manager->SetAnchor(outer_anchor);
 }
 
 ElementPtr Element::Clone() const
@@ -596,6 +605,16 @@ bool Element::IsVisible(bool include_ancestors) const
 		element = element->parent;
 	}
 	return true;
+}
+
+void Element::SetRenderAnchor(int slot)
+{
+	slot = Math::Max(slot, -1);
+	if (slot == render_anchor)
+		return;
+	render_anchor = slot;
+	if (slot >= 0)
+		ForceLocalStackingContext();
 }
 
 float Element::GetZIndex() const
