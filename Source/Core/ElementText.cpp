@@ -177,11 +177,12 @@ void ElementText::OnRender()
 
 	// Do a visibility test against the scissor region to avoid unnecessary render calls. Instead of handling
 	// culling in complicated transform cases, for simplicity we always proceed to render if one is detected.
+	// anchored content is laid out at the origin and moved when presented: the viewport does not bound it
 	Rectanglei scissor_region = render_manager.GetScissorRegion();
-	if (!scissor_region.Valid())
+	if (!scissor_region.Valid() && render_manager.GetState().anchor < 0)
 		scissor_region = Rectanglei::FromSize(render_manager.GetViewport());
 
-	if (!GetTransformState() || !GetTransformState()->GetTransform())
+	if (scissor_region.Valid() && (!GetTransformState() || !GetTransformState()->GetTransform()))
 	{
 		const FontMetrics& font_metrics = GetFontEngineInterface()->GetFontMetrics(GetFontFaceHandle());
 		const int ascent = Math::RoundUpToInteger(font_metrics.ascent);

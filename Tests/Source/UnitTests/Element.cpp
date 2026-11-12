@@ -682,3 +682,67 @@ TEST_CASE("Element.TransformStateAfterVisibilityChange")
 	document->Close();
 	TestsShell::ShutdownShell();
 }
+
+TEST_CASE("Element.AnchoredTextOutsideViewport")
+{
+	const String document_rml = R"(
+<rml>
+<head>
+	<title>Test</title>
+	<link type="text/rcss" href="/assets/rml.rcss"/>
+	<style>
+		body {
+			left: 0;
+			top: 0;
+			width: 400px;
+			height: 400px;
+			font-family: LatoLatin;
+			font-size: 16px;
+		}
+		#plate {
+			position: absolute;
+			left: -300px;
+			top: -200px;
+			width: 100px;
+			height: 40px;
+		}
+	</style>
+</head>
+<body>
+	<div id="plate">Label</div>
+</body>
+</rml>
+)";
+
+	Context* context = TestsShell::GetContext();
+	REQUIRE(context);
+
+	ElementDocument* document = context->LoadDocumentFromMemory(document_rml);
+	REQUIRE(document);
+	document->Show();
+
+	Element* plate = document->GetElementById("plate");
+	REQUIRE(plate);
+
+	if (TestsRenderInterface* render_interface = TestsShell::GetTestsRenderInterface())
+	{
+		const auto RenderedGeometry = [&]() {
+			context->Update();
+			render_interface->ResetCounters();
+			context->Render();
+			return render_interface->GetCounters().render_geometry;
+		};
+
+		// Text laid out off the viewport is not drawn, unless an anchor moves it when the frame is presented.
+		const size_t unanchored = RenderedGeometry();
+
+		plate->SetRenderAnchor(0);
+		CHECK(RenderedGeometry() > unanchored);
+
+		plate->SetRenderAnchor(-1);
+		CHECK(RenderedGeometry() == unanchored);
+	}
+
+	document->Close();
+	TestsShell::ShutdownShell();
+}
